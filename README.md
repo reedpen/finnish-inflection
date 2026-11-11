@@ -33,7 +33,9 @@ Answer: taloissa
 - **Presets and saved setups.** Beginner and focused presets give one-step
   practice. Your last setup is remembered for each drill.
 - **Vim-style `j`/`k` navigation** in every menu.
-- **Custom vocabulary.** Import your own word lists from CSV or plain text.
+- **Custom vocabulary.** Install shared sets from
+  [finnish-vocab-sets](https://github.com/reedpen/finnish-vocab-sets), or import
+  your own lists from a file, a paste, or a Quizlet or Anki export.
   Every word is checked against the morphology model first.
 
 ## Quick start
@@ -64,7 +66,7 @@ finnish-drill
 | Beginner nouns / verbs — quick start | Starts a 10-question preset immediately |
 | Resume last session | Repeats your most recent setup |
 | Configure noun / verb / participle practice | Choose a preset, repeat or edit your last setup, or customize from scratch |
-| Manage vocabulary | Import, preview, select, and remove vocabulary sets |
+| Manage vocabulary | Import, browse online, update, select, and remove vocabulary sets |
 | Reset all saved preferences | Clears every remembered setup |
 
 When you customize, you pick the forms in checklists (each has an **All**
@@ -111,42 +113,65 @@ starter vocabulary; it creates a separate list. If you want the starter words
 too, put them in your file as well. (To change the built-in list itself, see
 [Maintaining the starter vocabulary](#maintaining-the-starter-vocabulary).)
 
+### Online sets
+
+Shared sets live in
+[reedpen/finnish-vocab-sets](https://github.com/reedpen/finnish-vocab-sets).
+The app lists that repository live, so a set appears here as soon as it's
+pushed there.
+
+```bash
+finnish-drill vocab browse                 # list the online sets
+finnish-drill vocab get starter-verbs      # preview, then confirm
+finnish-drill vocab update                 # reinstall sets that changed online
+```
+
+In the interactive menu, use **Manage vocabulary → Browse online sets** and
+**Update online sets**. Installed sets are marked `✓ installed`, or
+`↻ update available` when their file changed online.
+
+To use another repository with the same layout, pass `--repo owner/repo[@branch]`
+or set `FINNISH_DRILL_SETS_REPO`. Without a token, GitHub allows 60 listings an
+hour; set `GITHUB_TOKEN` if you hit that limit.
+
 ### Importing a word list
 
 You only supply the Finnish word and an English hint. The part of speech
 (noun, adjective, or verb) and the verb type are detected automatically.
 
-Files must be UTF-8 and use the `.csv` or `.txt` extension, which determines
-the format:
+Put one word per line: the Finnish word, then its English meaning. The
+separator is detected, so Quizlet exports, Anki exports, spreadsheet copies,
+and hand-typed lists all work:
 
-- **CSV**, semicolon-delimited, with the exact header `Front;Back`:
+```text
+koira	dog              tab (Quizlet, Anki, spreadsheets)
+koira;dog              semicolon (Anki CSV)
+puhua,to speak, to talk    comma; later commas stay in the English
+```
 
-  ```text
-  Front;Back
-  koira;dog
-  puhua;to speak
-  ```
-
-- **Plain text**, one `Finnish,English` pair per line:
-
-  ```text
-  koira,dog
-  puhua,to speak
-  ```
+A header row (`Front;Back`, `Finnish,English`, `Suomi;Englanti`, …) is
+optional, and lines starting with `#` are ignored. Files must be UTF-8. A line
+that can't be split is reported in the preview instead of failing the import.
 
 Ready-to-copy samples are in [`examples/vocabulary.csv`](examples/vocabulary.csv)
 and [`examples/vocabulary.txt`](examples/vocabulary.txt).
 
 ```bash
 finnish-drill vocab import lesson-1 examples/vocabulary.csv   # preview, then confirm
+finnish-drill vocab import lesson-1 ~/Downloads/'My Words.txt'
+wl-paste | finnish-drill vocab import lesson-1 -                # clipboard (pbpaste on macOS)
 finnish-drill vocab list                                      # show all sets
 finnish-drill vocab select lesson-1                           # use it for future drills
 finnish-drill vocab select default                            # back to the starter set
 finnish-drill vocab remove lesson-1
 ```
 
-The same workflow is available under **Manage vocabulary** in the interactive
-menu.
+In the interactive menu, **Manage vocabulary** offers:
+
+- **Import from a file.** Tab completes paths, and you can drag a file into
+  the terminal.
+- **Paste a word list.** Paste or type the words, then press Esc then Enter to
+  finish.
 
 ### Adding more words later
 
@@ -198,6 +223,10 @@ finnish-drill --help               Show help
 finnish-drill --version            Show the installed version
 finnish-drill --debug              Show full tracebacks on startup errors
 finnish-drill vocab import NAME PATH [--overrides FILE] [--replace] [--yes]
+                                   (PATH may be - for standard input)
+finnish-drill vocab browse [--repo OWNER/REPO]
+finnish-drill vocab get SET [--name NAME] [--replace] [--yes] [--repo OWNER/REPO]
+finnish-drill vocab update [--yes] [--repo OWNER/REPO]
 finnish-drill vocab list
 finnish-drill vocab select NAME    (use "default" for the built-in set)
 finnish-drill vocab remove NAME

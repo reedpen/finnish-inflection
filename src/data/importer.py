@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import csv
 import json
+import os
+import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, IO, Any
+from typing import Callable, Any
+from urllib.parse import unquote, urlparse
 
 from src.data.vocab import (
     VocabularyEntry,
@@ -29,57 +33,161 @@ class ImportPreview:
     document: VocabularyDocument
 
 
-def _read_rows(path: Path, handle: IO[str]) -> list[tuple[str, str]]:
-    if path.suffix.casefold() == ".csv":
-        reader = csv.DictReader(handle, delimiter=";")
-        if reader.fieldnames is None or not {"Front", "Back"}.issubset(
-            reader.fieldnames
-        ):
-            raise VocabularyError("CSV headers must include Front and Back")
-        return [
-            ((row.get("Front") or "").strip(), (row.get("Back") or "").strip())
-            for row in reader
-        ]
-    if path.suffix.casefold() == ".txt":
-        rows = []
-        for line_number, line in enumerate(handle, 1):
-            if not line.strip():
-                continue
-            parts = line.rstrip("\r\n").split(",", 1)
-            if len(parts) != 2:
-                raise VocabularyError(
-                    f"text line {line_number} must be Finnish,English"
-                )
-            rows.append((parts[0].strip(), parts[1].strip()))
-        return rows
-    raise VocabularyError("vocabulary files must use .csv or .txt")
+Source = Path | str | bytes
+"""A file path, ``"-"`` for standard input, or the raw bytes of a word list."""
+
+# Column names recognised in an optional header row (compared case-insensitively).
+_FINNISH_HEADERS = {"front", "finnish", "suomi", "fin", "word", "term", "sana"}
+_ENGLISH_HEADERS = {
+    "back",
+    "english",
+    "englanti",
+    "eng",
+    "definition",
+    "meaning",
+    "translation",
+}
+# Detection order doubles as the tie-break: a tab beats a semicolon beats a comma,
+# because English definitions often contain commas but rarely tabs.
+_DELIMITERS = ("\t", ";", ",")
+# Values for Anki's "#separator:" export directive.
+_SEPARATOR_NAMES = {
+    "tab": "\t",
+    "semicolon": ";",
+    "comma": ",",
+    "pipe": "|",
+    "space": " ",
+}
+_ROW_HINT = "expected Finnish and English separated by a tab, semicolon, or comma"
+
+
+def normalize_path(raw: str | Path) -> Path:
+    """Turn a typed, pasted, or drag-and-dropped path into a usable ``Path``.
+
+    Terminals deliver dropped files as ``'/quoted path.csv'``, ``file:///...``
+    URIs, or with backslash-escaped spaces; users type ``~``. None of those
+    work with ``Path`` directly.
+    """
+    text = str(raw).strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "'\"":
+        text = text[1:-1]
+    if text.startswith("file://"):
+        text = unquote(urlparse(text).path)
+    elif os.name != "nt":
+        text = re.sub(r"\\(.)", r"\1", text)
+    return Path(text).expanduser()
+
+
+def read_source(source: Source) -> bytes:
+    """Return the bytes of a path, standard input (``"-"``), or raw content."""
+    if isinstance(source, bytes):
+        return source
+    if str(source).strip() == "-":
+        return sys.stdin.buffer.read()
+    path = normalize_path(source)
+    try:
+        return path.read_bytes()
+    except OSError as exc:
+        raise VocabularyError(f"could not read {path}: {exc.strerror or exc}") from exc
+
+
+def _decode(data: bytes) -> str:
+    try:
+        # utf-8-sig drops the byte-order mark Excel puts on exported CSVs.
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise VocabularyError("vocabulary must be valid UTF-8 text") from exc
+
+
+def _detect_delimiter(lines: list[str]) -> str:
+    counts = {d: sum(d in line for line in lines) for d in _DELIMITERS}
+    best = max(_DELIMITERS, key=lambda d: counts[d])  # max keeps the first on ties
+    if counts[best] == 0:
+        raise VocabularyError(f"could not find columns: {_ROW_HINT}")
+    return best
+
+
+def _header_columns(cells: list[str]) -> tuple[int, int] | None:
+    folded = [cell.strip().casefold() for cell in cells]
+    fin = next((i for i, cell in enumerate(folded) if cell in _FINNISH_HEADERS), None)
+    eng = next((i for i, cell in enumerate(folded) if cell in _ENGLISH_HEADERS), None)
+    return (fin, eng) if fin is not None and eng is not None else None
+
+
+def parse_rows(text: str) -> tuple[list[tuple[str, str]], list[dict[str, str]]]:
+    """Split a word list into ``(finnish, english)`` rows and per-line problems.
+
+    Accepts tab-, semicolon-, or comma-separated text with an optional header
+    row, which covers Quizlet and Anki exports, spreadsheets, and hand-typed
+    lists. Lines starting with ``#`` are comments (or Anki export directives).
+    """
+    delimiter = None
+    lines: list[tuple[int, str]] = []
+    for number, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            key, _, value = stripped[1:].partition(":")
+            if key.strip().casefold() == "separator":
+                value = value.strip()
+                delimiter = _SEPARATOR_NAMES.get(value.casefold(), value[:1] or None)
+        elif stripped:
+            lines.append((number, line))
+    if not lines:
+        raise VocabularyError("no vocabulary rows found")
+    delimiter = delimiter or _detect_delimiter([line for _, line in lines])
+
+    def cells(line: str) -> list[str]:
+        return next(csv.reader([line], delimiter=delimiter))
+
+    columns = _header_columns(cells(lines[0][1]))
+    if columns is not None:
+        lines = lines[1:]
+
+    rows: list[tuple[str, str]] = []
+    problems: list[dict[str, str]] = []
+    for number, line in lines:
+        parts = cells(line)
+        if columns is not None:
+            fin_col, eng_col = columns
+            fin = parts[fin_col] if fin_col < len(parts) else ""
+            eng = parts[eng_col] if eng_col < len(parts) else ""
+        elif len(parts) < 2:
+            fin, eng = (parts[0] if parts else ""), ""
+        elif delimiter == "\t":
+            # Tab exports (Anki, Quizlet) may carry extra columns such as tags.
+            fin, eng = parts[0], parts[1]
+        else:
+            # "puhua, to speak, to talk" keeps everything after the first separator.
+            fin, eng = parts[0], delimiter.join(parts[1:])
+        fin, eng = fin.strip(), eng.strip()
+        if not fin or not eng:
+            problems.append(
+                {
+                    "fin": fin or f"(line {number})",
+                    "reason": f"line {number}: {_ROW_HINT}",
+                }
+            )
+            continue
+        rows.append((fin, eng))
+    return rows, problems
 
 
 def import_vocabulary(
-    source: Path | str,
+    source: Source,
     *,
     analyzer: Analyzer,
     name: str,
     overrides: dict[str, dict[str, str] | None] | None = None,
     forms_validator: Callable[[dict[str, Any]], bool] | None = None,
+    metadata: dict[str, str] | None = None,
 ) -> ImportPreview:
     """Parse, analyze, and preview a source without installing it."""
-    path = Path(source)
-    try:
-        source_bytes = path.read_bytes()
-        text = source_bytes.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise VocabularyError(f"{path} is not valid UTF-8") from exc
-    except OSError as exc:
-        raise VocabularyError(f"could not read {path}: {exc}") from exc
-
-    from io import StringIO
-
-    rows = _read_rows(path, StringIO(text))
+    source_bytes = read_source(source)
+    rows, problems = parse_rows(_decode(source_bytes))
     accepted: list[VocabularyEntry] = []
     corrected: list[VocabularyEntry] = []
     ambiguous: list[dict[str, str]] = []
-    rejected: list[dict[str, str]] = []
+    rejected: list[dict[str, str]] = list(problems)
     excluded: list[str] = []
     seen: set[tuple[str, str]] = set()
     overrides = overrides or {}
@@ -143,7 +251,9 @@ def import_vocabulary(
         if was_corrected:
             corrected.append(item)
 
-    document = make_vocabulary_document(accepted, source_bytes=source_bytes, name=name)
+    document = make_vocabulary_document(
+        accepted, source_bytes=source_bytes, name=name, extra_metadata=metadata
+    )
     return ImportPreview(accepted, corrected, ambiguous, rejected, excluded, document)
 
 
@@ -192,7 +302,7 @@ def preview_rows(preview: ImportPreview) -> list[dict[str, str]]:
 def load_overrides(path: Path | str | None) -> dict[str, dict[str, str] | None] | None:
     if path is None or str(path).strip() == "":
         return None
-    source = Path(path)
+    source = normalize_path(path)
     try:
         value = json.loads(source.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
@@ -203,11 +313,12 @@ def load_overrides(path: Path | str | None) -> dict[str, dict[str, str] | None] 
 
 
 def analyze_vocabulary_source(
-    source: Path | str,
+    source: Source,
     *,
     name: str,
     overrides: dict[str, dict[str, str] | None] | None = None,
     morphology=None,
+    metadata: dict[str, str] | None = None,
 ) -> ImportPreview:
     """Run model setup, analysis, and a representative generated-form check."""
     from src.data.vocab import categorize_word
@@ -232,4 +343,5 @@ def analyze_vocabulary_source(
         name=name,
         overrides=overrides,
         forms_validator=has_forms,
+        metadata=metadata,
     )

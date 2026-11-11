@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import unicodedata
 import warnings
 from importlib.resources import files
 from pathlib import Path
@@ -25,6 +26,19 @@ APP_NAME = "finnish-inflection-cli"
 SCHEMA_VERSION = 1
 SUPPORTED_POS = {"N", "A", "V"}
 _SET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+
+
+def is_valid_set_name(name: str) -> bool:
+    return bool(_SET_NAME.fullmatch(name))
+
+
+def suggest_set_name(text: str) -> str:
+    """Derive a valid set name from a file name or title (``päivä/1`` → ``paiva-1``)."""
+    ascii_text = (
+        unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    )
+    slug = re.sub(r"[^A-Za-z0-9_-]+", "-", ascii_text).strip("-_")
+    return slug[:64].rstrip("-_") or "set"
 
 
 class VocabularyError(ValueError):
@@ -45,6 +59,7 @@ class VocabularyMetadata(TypedDict):
     name: str
     source_sha256: str
     source: NotRequired[str]
+    remote_sha: NotRequired[str]
 
 
 class VocabularyDocument(TypedDict):
@@ -141,11 +156,16 @@ def validate_vocabulary_document(document: Any) -> VocabularyDocument:
 
 
 def make_vocabulary_document(
-    entries: Iterable[VocabularyEntry], *, source_bytes: bytes, name: str
+    entries: Iterable[VocabularyEntry],
+    *,
+    source_bytes: bytes,
+    name: str,
+    extra_metadata: dict[str, str] | None = None,
 ) -> VocabularyDocument:
     document = {
         "schema_version": SCHEMA_VERSION,
         "metadata": {
+            **(extra_metadata or {}),
             "name": name,
             "source_sha256": hashlib.sha256(source_bytes).hexdigest(),
         },
