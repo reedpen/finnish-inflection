@@ -268,20 +268,27 @@ def _best_lemmas(word: str, readings: list[Reading]) -> dict[str, str]:
     """One lemma per part of speech: the word itself if possible, else the first
     whole-word reading, else the first reading.
 
+    A capitalised word ("Talo", as flashcard exports often write it) prefers
+    its lowercase common-word lemma over a proper-noun reading of the same
+    spelling, which the model can't inflect as a drill word.
+
     Compound lemmas are rebuilt by joining the parts' lemmas, which drops a
     part's own inflection: "kirjanpitäjät" would give "kirjapitäjä", where the
     model's whole-word reading gives "kirjanpitäjä".
     """
+    lowered = word[:1].lower() + word[1:]
     choices: dict[str, str] = {}
     for pos in sorted({r.pos for r in readings}, key=_POS_ORDER.index):
         ours = [r for r in readings if r.pos == pos]
-        lemmas = [r.lemma for r in ours]
+        preferences = (
+            lambda r: r.lemma == lowered,
+            lambda r: r.lemma == word,
+            lambda r: r.lemma.casefold() == word.casefold(),
+            lambda r: not r.compound,
+        )
         choices[pos] = next(
-            (lemma for lemma in lemmas if lemma == word),
-            next(
-                (lemma for lemma in lemmas if lemma.casefold() == word.casefold()),
-                next((r.lemma for r in ours if not r.compound), lemmas[0]),
-            ),
+            (r.lemma for wanted in preferences for r in ours if wanted(r)),
+            ours[0].lemma,
         )
     return choices
 

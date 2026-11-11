@@ -152,6 +152,19 @@ def test_inflected_compounds_prefer_the_whole_word_reading():
     assert categorize_word("kissakaupassa", "", compounds) == ("N", "kissakauppa")
 
 
+def test_capitalised_words_prefer_the_common_word_over_a_name():
+    # Flashcard exports often capitalise every word; the model then also offers
+    # a proper-noun reading spelled exactly like the input.
+    capitalised = Analyses(
+        Talo=["talo+N+Sg+Nom", "Talo+N+Prop+Sg+Nom"],
+        Helsinki=["Helsinki+N+Prop+Sg+Nom"],
+    )
+
+    assert categorize_word("Talo", "house", capitalised) == ("N", "talo")
+    # A real name keeps its capital.
+    assert categorize_word("Helsinki", "", capitalised) == ("N", "Helsinki")
+
+
 @pytest.mark.integration
 def test_real_model_reads_dictionary_forms_as_themselves():
     from finnish_core.morphology import UralicNlpAdapter
@@ -185,3 +198,20 @@ def test_real_model_lemmatizes_inflected_compounds():
         ("kuusi", "kuusi"),
     ]:
         assert analyze_word(word, "", morphology).lemma == lemma, word
+
+
+@pytest.mark.integration
+def test_real_model_imports_capitalised_word_lists():
+    from finnish_core.importer import analyze_vocabulary
+    from finnish_core.morphology import UralicNlpAdapter
+
+    text = "Talo, house\nKoira, dog\nJuosta, to run\nVesi, water\n"
+    preview = analyze_vocabulary(text.encode(), UralicNlpAdapter(), name="caps")
+
+    assert [(e["fin"], e["lemma"], e["pos"]) for e in preview.accepted] == [
+        ("Talo", "talo", "N"),
+        ("Koira", "koira", "N"),
+        ("Juosta", "juosta", "V"),
+        ("Vesi", "vesi", "N"),
+    ]
+    assert preview.rejected == []
