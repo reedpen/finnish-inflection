@@ -9,33 +9,7 @@
   "empty_values": [],
   "unknown_parts_of_speech": [],
   "ambiguous_analyses": [],
-  "resolved_ambiguities": [
-    {
-      "fin": "nainen",
-      "reviewed": "nainen (N)",
-      "analyzed": "nainen (?)"
-    },
-    {
-      "fin": "uusi",
-      "reviewed": "uusi (A)",
-      "analyzed": "uusi (?)"
-    },
-    {
-      "fin": "hyvä",
-      "reviewed": "hyvä (A)",
-      "analyzed": "hyvä (?)"
-    },
-    {
-      "fin": "pieni",
-      "reviewed": "pieni (A)",
-      "analyzed": "pieni (?)"
-    },
-    {
-      "fin": "suuri",
-      "reviewed": "suuri (A)",
-      "analyzed": "suuri (?)"
-    }
-  ],
+  "resolved_ambiguities": [],
   "generated_form_failures": [],
   "model_verification": {
     "status": "passed",
