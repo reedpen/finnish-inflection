@@ -25,6 +25,7 @@ from src.nlp.tags import (
     VERB_TYPES,
 )
 from src.ui.drill import clear_terminal, run_practice_session
+from src.ui.keys import NAV_KEYBINDINGS
 from src.ui.vocabulary import manage_vocabulary
 
 
@@ -50,6 +51,7 @@ def checkbox_with_all(
         ),
     ]
     result = inquirer.checkbox(
+        keybindings=NAV_KEYBINDINGS,
         message=message,
         choices=choices,
         validate=lambda selected: len(selected) > 0,
@@ -101,6 +103,7 @@ def run_menu():
         )
         try:
             choice = inquirer.select(
+                keybindings=NAV_KEYBINDINGS,
                 message="Choose a drill:",
                 choices=choices,
             ).execute()
@@ -140,7 +143,9 @@ def _choose_setup(drill: str, customize: Callable[..., DrillSettings | None]):
             {"name": "Back", "value": "back"},
         ]
     )
-    action = inquirer.select(message="Choose a setup:", choices=choices).execute()
+    action = inquirer.select(
+        message="Choose a setup:", choices=choices, keybindings=NAV_KEYBINDINGS
+    ).execute()
     if action in (None, "back"):
         return None
     if action == "reset":
@@ -160,6 +165,7 @@ def _choose_setup(drill: str, customize: Callable[..., DrillSettings | None]):
 
 def _session_length(initial: int | None = 10) -> int | None:
     value = inquirer.select(
+        keybindings=NAV_KEYBINDINGS,
         message="Session length:",
         choices=[
             {"name": "10 questions", "value": 10},
@@ -296,6 +302,7 @@ def _run_pool(configuration, builder, title: str) -> NavigationAction:
             settings_store.save(configuration)
             settings_saved = True
         action = inquirer.select(
+            keybindings=NAV_KEYBINDINGS,
             message="What next?",
             choices=_post_session_choices(result.action),
         ).execute()

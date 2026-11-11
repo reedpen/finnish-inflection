@@ -32,7 +32,7 @@ Answer: taloissa
   attempt. Without an attempt, each hint reveals one more letter.
 - **Presets and saved setups.** Beginner and focused presets give one-step
   practice. Your last setup is remembered for each drill.
-- **Optional vim key bindings** for menus and answers.
+- **Vim-style `j`/`k` navigation** in every menu.
 - **Custom vocabulary.** Import your own word lists from CSV or plain text.
   Every word is checked against the morphology model first.
 
@@ -91,18 +91,10 @@ option). Then you choose a session length: 10, 20, 50, or endless.
 Use ↑/↓ to recall earlier answers in the current run. Where Finnish allows more
 than one correct form, any of them is accepted.
 
-### Vim key bindings
+### Menu navigation
 
-Start with `finnish-drill --vim`, or set `FINNISH_DRILL_VIM=1` in your shell
-profile, to use vi key bindings throughout:
-
-- **Menus and checklists:** `j`/`k` move down and up. The arrow keys still work.
-- **Answer prompt and text fields:** full vi line editing. You start in insert
-  mode, and Esc switches to normal mode (`0`, `$`, `w`, `b`, `x`, `D`, `cw`, and
-  so on). Enter submits from either mode.
-
-The drill commands (`h`, `s`, `b`, `q`) are unchanged. You type them as an
-answer in insert mode.
+In every menu and checklist, `j`/`k`, the arrow keys, and Ctrl+N/Ctrl+P all
+move down and up. Space toggles a checklist item, and Enter confirms.
 
 After each session you get a summary of answers, first-try successes,
 successes after retries, retries, hints, and skips. You can then replay,
@@ -205,7 +197,6 @@ finnish-drill                      Start the interactive drill
 finnish-drill --help               Show help
 finnish-drill --version            Show the installed version
 finnish-drill --debug              Show full tracebacks on startup errors
-finnish-drill --vim                Use vi key bindings (or FINNISH_DRILL_VIM=1)
 finnish-drill vocab import NAME PATH [--overrides FILE] [--replace] [--yes]
 finnish-drill vocab list
 finnish-drill vocab select NAME    (use "default" for the built-in set)
