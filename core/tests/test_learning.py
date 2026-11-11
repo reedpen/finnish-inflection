@@ -422,3 +422,10 @@ def test_adjectives_and_nouns_share_skill_cells():
     assert [(item.word, item.form_id, item.reason) for item in items] == [
         ("rikas", "+A+Pl+Ine", "weak")
     ]
+
+
+def test_replay_breaks_timestamp_ties_by_seq():
+    first = Attempt(1, "verb:1", "+V+Act+Ind+Prs+Sg1", "correct", T0, seq=1)
+    second = Attempt(1, "verb:1", "+V+Act+Ind+Prs+Sg1", "skipped", T0, seq=2)
+    assert replay([first, second]).cards == replay([second, first]).cards
+    assert replay([second, first]).cards[1].lapses == 1

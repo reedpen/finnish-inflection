@@ -54,6 +54,13 @@ class Attempt:
     wrong_attempts: int = 0
     hints: int = 0
     duration_ms: int | None = None
+    seq: int = 0
+    """Breaks ties between attempts with the same ``answered_at``; callers
+    pass a stable increasing id (the server uses its attempt row id)."""
+
+
+def _order(attempt: Attempt) -> tuple[datetime, int]:
+    return (_utc(attempt.answered_at), attempt.seq)
 
 
 def rating(attempt: Attempt) -> Rating:
@@ -254,9 +261,13 @@ class LearnerState:
 
 
 def replay(attempts: Iterable[Attempt]) -> LearnerState:
-    """Rebuild a learner's state from their whole history, oldest first."""
+    """Rebuild a learner's state from their whole history, oldest first.
+
+    Attempts with the same time are applied in ``seq`` order, so the result
+    never depends on the order they are passed in.
+    """
     state = LearnerState()
-    for attempt in sorted(attempts, key=lambda attempt: _utc(attempt.answered_at)):
+    for attempt in sorted(attempts, key=_order):
         state.record(attempt)
     return state
 
