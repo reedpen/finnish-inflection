@@ -167,8 +167,13 @@ MIN_EVIDENCE = 3.0
 Level = Literal["unseen", "weak", "learning", "mastered"]
 
 
+def skill_form(form_id: str) -> str:
+    """The form as a skill: adjectives decline like nouns, so ``+A`` reads ``+N``."""
+    return "+N" + form_id[2:] if form_id.startswith("+A+") else form_id
+
+
 def skill_id(word_class: str, form_id: str) -> str:
-    return f"{word_class}|{form_id}"
+    return f"{word_class}|{skill_form(form_id)}"
 
 
 @dataclass(frozen=True)
@@ -512,14 +517,16 @@ def daily_plan(
                 return
             class_id, _, form_id = skill.partition("|")
             candidates = [
-                word
+                (word, form)
                 for word in by_class.get(class_id, ())
-                if word.id not in used and form_id in word.form_ids
+                if word.id not in used
+                for form in word.form_ids
+                if skill_form(form) == form_id
             ]
             if not candidates:
                 continue
-            word = rng.choice(candidates)
-            plan.append(PlanItem(word.id, form_id, "weak"))
+            word, form = rng.choice(candidates)
+            plan.append(PlanItem(word.id, form, "weak"))
             used.add(word.id)
             limit -= 1
 
@@ -579,6 +586,7 @@ __all__ = [
     "replay",
     "retrievability",
     "review_form_ids",
+    "skill_form",
     "skill_id",
     "strength",
     "update_card",

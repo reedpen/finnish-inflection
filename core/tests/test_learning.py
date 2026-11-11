@@ -407,3 +407,18 @@ def test_end_of_day_uses_the_learners_time_zone():
     late = datetime(2026, 11, 1, 23, 30, tzinfo=timezone.utc)
     assert end_of_day(late, helsinki) == datetime(2026, 11, 3, tzinfo=helsinki)
     assert end_of_day(late, timezone.utc) == datetime(2026, 11, 2, tzinfo=timezone.utc)
+
+
+def test_adjectives_and_nouns_share_skill_cells():
+    from finnish_core.learning import skill_form
+
+    assert skill_form("+A+Pl+Ine") == "+N+Pl+Ine"
+    assert skill_form("+V+Act+Ind+Prs+Sg1") == "+V+Act+Ind+Prs+Sg1"
+    assert skill_id("nominal:as", "+A+Sg+Gen") == skill_id("nominal:as", "+N+Sg+Gen")
+
+    adjective = word("rikas", due_in=timedelta(days=9), forms=review_form_ids("A"))
+    mastery = {skill_id("nominal:a", "+N+Pl+Ine"): weak_cell()}
+    items = plan([adjective], mastery, size=5)
+    assert [(item.word, item.form_id, item.reason) for item in items] == [
+        ("rikas", "+A+Pl+Ine", "weak")
+    ]

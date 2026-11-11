@@ -333,3 +333,10 @@ def question_for(
         pos=pos,
         form_id=form_id,
     )
+
+
+def form_label(form_id: str) -> str:
+    """The display label for a form id, such as ``Genitive (-n) Singular``."""
+    pos = "V" if form_id.startswith("+V") else form_id[1:2]
+    target = _form_targets(pos).get(form_id)
+    return target[1] if target else form_id

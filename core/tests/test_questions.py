@@ -255,3 +255,12 @@ def test_question_for_rejects_forms_of_another_part_of_speech_or_without_answers
         question_for(noun, "+N+Sg+Gen", lambda *_: ["talon"]).target
         == "Genitive (-n) Singular"
     )
+
+
+def test_form_labels():
+    from finnish_core.questions import form_label
+
+    assert form_label("+N+Pl+Ine") == "Inessive (-ssa) Plural"
+    assert form_label("+A+Com+PxSg3") == "Comitative (-ineen)"
+    assert form_label("+V+Pss+Ind+Prt+Pe4") == "Past, Passive"
+    assert form_label("+X") == "+X"
