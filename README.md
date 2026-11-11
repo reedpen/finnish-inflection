@@ -343,8 +343,12 @@ remain rejected.
 
 ## License and data provenance
 
-The software and the maintainer-authored starter vocabulary are **all rights
-reserved** (`LicenseRef-Proprietary`); see [`LICENSE`](LICENSE).
+The software and the maintainer-authored starter vocabulary are licensed under
+the [Apache License 2.0](LICENSE). See [`NOTICE`](NOTICE) for attribution.
+
+The Finnish morphology model that uralicNLP downloads on first run is
+[Omorfi](https://github.com/flammie/omorfi), which is GPL-licensed. It isn't
+part of this repository or its packages.
 
 The repository also contains a historical `book_of_mormon_complete.csv` and an
 old `data/vocab_cache.json`. Neither has a recorded source URL or

@@ -4,11 +4,10 @@ version = "0.1.0"
 description = "Interactive Finnish noun, adjective, and verb inflection practice"
 readme = "README.md"
 requires-python = ">=3.11"
-license = "LicenseRef-Proprietary"
-license-files = ["LICENSE"]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 classifiers = [
     "Environment :: Console",
-    "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -34,7 +33,7 @@ build-backend = "hatchling.build"
 packages = ["src"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "examples", "LICENSE", "README.md", "pyproject.toml"]
+include = ["src", "examples", "LICENSE", "NOTICE", "README.md", "pyproject.toml"]
 
 [dependency-groups]
 dev = [
