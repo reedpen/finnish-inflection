@@ -6,23 +6,10 @@ from rich.console import Console
 from src.data.importer import (
     analyze_vocabulary_source,
     load_overrides,
-    normalize_path,
     preview_rows,
     preview_summary,
 )
-from src.data.remote import (
-    RemoteRepository,
-    analyze_remote_set,
-    find_updates,
-    installed_remote_sets,
-    remote_status,
-)
-from src.data.vocab import (
-    VocabularyError,
-    VocabularyStore,
-    is_valid_set_name,
-    suggest_set_name,
-)
+from src.data.vocab import VocabularyError, VocabularyStore
 from src.ui.keys import NAV_KEYBINDINGS
 
 
@@ -44,163 +31,50 @@ def _print_vocabulary_listing(store: VocabularyStore) -> None:
         console.print(f"  {item['name']}: {item['entries']} {marker}")
 
 
-_STYLES = {
-    "accepted": "green",
-    "corrected": "cyan",
-    "ambiguous": "yellow",
-    "rejected": "red",
-    "excluded": "dim",
-}
-_ANALYZING = "[cyan]Analyzing vocabulary and checking generated forms…[/cyan]"
-
-
-def _ask_name(default: str = "") -> str:
-    return (
+def _import_vocabulary_interactively(store: VocabularyStore) -> None:
+    name = (inquirer.text(message="Set name:").execute() or "").strip()
+    if not name:
+        return
+    path = (inquirer.text(message="CSV or text file path:").execute() or "").strip()
+    if not path:
+        return
+    overrides_path = (
         inquirer.text(
-            message="Set name:",
-            default=default,
-            validate=lambda value: not value.strip()
-            or is_valid_set_name(value.strip()),
-            invalid_message="Use only letters, numbers, underscores, and hyphens",
-            mandatory=False,
+            message="Optional overrides JSON path (leave blank for none):"
         ).execute()
         or ""
     ).strip()
-
-
-def _ask_path(message: str, instruction: str = "") -> str:
-    return (
-        inquirer.filepath(
-            message=message,
-            long_instruction=instruction,
-            validate=lambda value: not value.strip()
-            or normalize_path(value).is_file(),
-            invalid_message="No file at that path",
-            mandatory=False,
-        ).execute()
-        or ""
-    ).strip()
-
-
-def _review_and_install(store: VocabularyStore, name: str, preview) -> bool:
+    console.print("[cyan]Analyzing vocabulary and checking generated forms…[/cyan]")
+    preview = analyze_vocabulary_source(
+        path,
+        name=name,
+        overrides=load_overrides(overrides_path or None),
+    )
     console.print(preview_summary(preview))
+    styles = {
+        "accepted": "green",
+        "corrected": "cyan",
+        "ambiguous": "yellow",
+        "rejected": "red",
+        "excluded": "dim",
+    }
     for row in preview_rows(preview):
-        style = _STYLES[row["status"]]
+        style = styles[row["status"]]
         console.print(
             f"[{style}]{row['status'].title()} {row['fin']}: {row['detail']}[/{style}]"
         )
     if not preview.accepted:
         raise VocabularyError("no valid entries to install")
-    replace = name in {item["name"] for item in store.list_sets()}
+    existing = {item["name"] for item in store.list_sets()}
+    replace = name in existing
     prompt = f"Replace existing set {name!r}?" if replace else f"Install set {name!r}?"
     if not inquirer.confirm(message=prompt, default=False).execute():
         console.print(
             "[yellow]Import cancelled; existing sets were not changed.[/yellow]"
         )
-        return False
+        return
     store.install(name, preview.document, replace=replace)
     console.print(f"[green]Installed vocabulary: {name}[/green]")
-    return True
-
-
-def _import_from_file(store: VocabularyStore) -> None:
-    path = _ask_path(
-        "Word list file:",
-        "Tab completes paths; you can also drag a file into the terminal. "
-        "Columns may be separated by tabs, semicolons, or commas.",
-    )
-    if not path:
-        return
-    name = _ask_name(default=suggest_set_name(normalize_path(path).stem))
-    if not name:
-        return
-    overrides_path = _ask_path("Optional overrides JSON (leave blank for none):")
-    console.print(_ANALYZING)
-    preview = analyze_vocabulary_source(
-        path, name=name, overrides=load_overrides(overrides_path or None)
-    )
-    _review_and_install(store, name, preview)
-
-
-def _import_from_paste(store: VocabularyStore) -> None:
-    text = (
-        inquirer.text(
-            message="Paste or type words:",
-            multiline=True,
-            long_instruction="One word per line: Finnish, then English, separated "
-            "by a tab, semicolon, or comma. Press Esc then Enter to finish.",
-            mandatory=False,
-        ).execute()
-        or ""
-    )
-    if not text.strip():
-        return
-    name = _ask_name()
-    if not name:
-        return
-    console.print(_ANALYZING)
-    preview = analyze_vocabulary_source(text.encode("utf-8"), name=name)
-    _review_and_install(store, name, preview)
-
-
-def _browse_online(
-    store: VocabularyStore, repository: RemoteRepository | None = None
-) -> None:
-    repository = repository or RemoteRepository()
-    with console.status(f"Fetching sets from {repository.repository}…"):
-        sets = repository.list_sets()
-    if not sets:
-        console.print(f"[yellow]No sets found in {repository.repository}.[/yellow]")
-        return
-    installed = installed_remote_sets(store)
-    labels = {"new": "", "installed": "  ✓ installed", "update": "  ↻ update available"}
-    choices = [
-        {
-            "name": item.title + labels[remote_status(repository, item, installed)[0]],
-            "value": item,
-        }
-        for item in sets
-    ]
-    item = inquirer.select(
-        keybindings=NAV_KEYBINDINGS,
-        message=f"Sets in {repository.repository}:",
-        choices=[*choices, {"name": "Back", "value": None}],
-    ).execute()
-    if item is None:
-        return
-    _, local = remote_status(repository, item, installed)
-    name = _ask_name(default=local or item.name)
-    if not name:
-        return
-    console.print(_ANALYZING)
-    preview = analyze_remote_set(
-        repository, item, name=name, analyze=analyze_vocabulary_source
-    )
-    _review_and_install(store, name, preview)
-
-
-def _update_online(
-    store: VocabularyStore, repository: RemoteRepository | None = None
-) -> None:
-    repository = repository or RemoteRepository()
-    with console.status("Checking online sets for updates…"):
-        pending = find_updates(repository, store)
-    if not pending:
-        console.print("[green]All online sets are up to date.[/green]")
-        return
-    for update in pending:
-        name = update.local.name
-        if update.remote is None:
-            console.print(
-                f"[yellow]{name} is no longer in {repository.repository}; kept as is.[/yellow]"
-            )
-            continue
-        console.print(f"\n[bold]{name}[/bold] changed online ({update.remote.path})")
-        console.print(_ANALYZING)
-        preview = analyze_remote_set(
-            repository, update.remote, name=name, analyze=analyze_vocabulary_source
-        )
-        _review_and_install(store, name, preview)
 
 
 def manage_vocabulary(store: VocabularyStore | None = None) -> bool:
@@ -212,10 +86,7 @@ def manage_vocabulary(store: VocabularyStore | None = None) -> bool:
             keybindings=NAV_KEYBINDINGS,
             message="Manage vocabulary:",
             choices=[
-                {"name": "Import from a file", "value": "file"},
-                {"name": "Paste a word list", "value": "paste"},
-                {"name": "Browse online sets", "value": "browse"},
-                {"name": "Update online sets", "value": "update"},
+                {"name": "Import or replace a set", "value": "import"},
                 {"name": "Select active set", "value": "select"},
                 {"name": "Remove a custom set", "value": "remove"},
                 {"name": "Back", "value": "back"},
@@ -225,14 +96,8 @@ def manage_vocabulary(store: VocabularyStore | None = None) -> bool:
             return False
         try:
             custom = [item["name"] for item in store.list_sets()]
-            if action == "file":
-                _import_from_file(store)
-            elif action == "paste":
-                _import_from_paste(store)
-            elif action == "browse":
-                _browse_online(store)
-            elif action == "update":
-                _update_online(store)
+            if action == "import":
+                _import_vocabulary_interactively(store)
             elif action == "select":
                 name = inquirer.select(
                     keybindings=NAV_KEYBINDINGS,
