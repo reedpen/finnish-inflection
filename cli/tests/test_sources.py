@@ -47,3 +47,29 @@ def test_normalize_path_expands_home(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
 
     assert normalize_path("~/words.csv") == tmp_path / "words.csv"
+
+
+def test_analyzing_a_source_passes_the_finnish_column_on():
+    from finnish_cli.sources import analyze_vocabulary_source
+
+    class Morphology:
+        def is_language_installed(self, language):
+            return True
+
+        def analyze(self, word, language):
+            return [("talo+N+Sg+Nom", 0.0)] if word == "talo" else []
+
+        def generate(self, query, language):
+            return [(query, 0.0)] if query.startswith("talo+") else []
+
+    reversed_list = b"house,talo\n"
+    detected = analyze_vocabulary_source(
+        reversed_list, name="x", morphology=Morphology()
+    )
+    chosen = analyze_vocabulary_source(
+        reversed_list, name="x", morphology=Morphology(), finnish_column=0
+    )
+
+    assert detected.columns == {"finnish": 1, "source": "auto", "confident": True}
+    assert [item["fin"] for item in detected.accepted] == ["talo"]
+    assert chosen.columns["source"] == "chosen" and chosen.accepted == []

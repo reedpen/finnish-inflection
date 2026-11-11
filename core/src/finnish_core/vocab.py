@@ -239,6 +239,31 @@ def word_readings(word: str, morphology: "MorphologyAdapter") -> list[Reading]:
     return readings
 
 
+# Readings that don't show the model knows a word: English "it", "ok" and "I"
+# have them (as acronyms, abbreviations and a Roman numeral).
+_WEAK_TAGS = {"ACR", "ABBR", "Rom"}
+
+
+def is_known_word(word: str, morphology: "MorphologyAdapter") -> bool:
+    """Whether the model's lexicon has ``word``, as any part of speech.
+
+    The model doesn't guess: a word it doesn't know gets no analysis, or itself
+    back with no tags. A word in capitals is also tried in lower case. Readings
+    only as an acronym, abbreviation or Roman numeral don't count.
+    """
+    for candidate in dict.fromkeys((word, word.casefold())):
+        try:
+            analyses = morphology.analyze(candidate, "fin") or []
+        except Exception:
+            continue
+        for analysis in analyses:
+            text = analysis[0] if isinstance(analysis, (tuple, list)) else analysis
+            tags = set(str(text).split("#")[-1].split("+")[1:])
+            if tags and not tags & _WEAK_TAGS:
+                return True
+    return False
+
+
 def _best_lemmas(word: str, readings: list[Reading]) -> dict[str, str]:
     """One lemma per part of speech: the word itself if possible, else the first
     whole-word reading, else the first reading.

@@ -6,7 +6,7 @@ import argparse
 import sys
 from importlib.metadata import PackageNotFoundError, version
 
-from finnish_core.importer import preview_rows, preview_summary
+from finnish_core.importer import column_summary, preview_rows, preview_summary
 from finnish_core.vocab import VocabularyError
 
 from finnish_cli.remote import (
@@ -55,6 +55,14 @@ def build_parser() -> argparse.ArgumentParser:
     import_parser.add_argument(
         "--overrides",
         help="JSON mapping words to a lemma/POS or null exclusion",
+    )
+    import_parser.add_argument(
+        "--finnish-column",
+        type=int,
+        choices=(1, 2),
+        metavar="{1,2}",
+        help="which column holds the Finnish words (default: the header row "
+        "says, or it is detected)",
     )
     import_parser.add_argument(
         "--replace", action="store_true", help="replace an existing set atomically"
@@ -130,6 +138,16 @@ def _analyze(run):
         ) from exc
 
 
+def _column_hint(columns) -> str:
+    """How to read the other column instead, when it may be the right one."""
+    if columns["source"] == "chosen":
+        return ""
+    other = 2 - columns["finnish"]
+    if columns["source"] == "auto" and not columns["confident"]:
+        return f"if the words below are English, re-run with --finnish-column {other}"
+    return f"use --finnish-column {other} to read the other column"
+
+
 def _review_and_install(
     store: VocabularyStore,
     name: str,
@@ -138,7 +156,13 @@ def _review_and_install(
     yes: bool,
     replace: bool,
     from_terminal: bool = False,
+    column_hint: str = "",
 ) -> bool:
+    print(
+        column_summary(preview.columns)
+        + (f"; {column_hint}" if column_hint else "")
+        + "."
+    )
     print(preview_summary(preview))
     for row in preview_rows(preview):
         print(f"{row['status'].title()} {row['fin']}: {row['detail']}")
@@ -242,9 +266,13 @@ def _run_vocab(args: argparse.Namespace) -> int:
 
     overrides = load_overrides(args.overrides)
     from_stdin = args.path.strip() == "-"
+    finnish_column = None if args.finnish_column is None else args.finnish_column - 1
     preview = _analyze(
         lambda: analyze_vocabulary_source(
-            args.path, name=args.name, overrides=overrides
+            args.path,
+            name=args.name,
+            overrides=overrides,
+            finnish_column=finnish_column,
         )
     )
     _review_and_install(
@@ -254,6 +282,7 @@ def _run_vocab(args: argparse.Namespace) -> int:
         yes=args.yes,
         replace=args.replace,
         from_terminal=from_stdin and not sys.stdin.isatty(),
+        column_hint=_column_hint(preview.columns),
     )
     return 0
 

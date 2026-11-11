@@ -3,7 +3,7 @@
 from InquirerPy import inquirer
 from rich.console import Console
 
-from finnish_core.importer import preview_rows, preview_summary
+from finnish_core.importer import column_summary, preview_rows, preview_summary
 from finnish_cli.remote import (
     RemoteRepository,
     analyze_remote_set,
@@ -78,6 +78,7 @@ def _ask_path(message: str, instruction: str = "") -> str:
 
 
 def _review_and_install(store: VocabularyStore, name: str, preview) -> bool:
+    console.print(column_summary(preview.columns) + ".")
     console.print(preview_summary(preview))
     for row in preview_rows(preview):
         style = _STYLES[row["status"]]

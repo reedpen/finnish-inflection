@@ -7,8 +7,9 @@ is up to the caller.
 from __future__ import annotations
 
 import csv
+import unicodedata
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, TypedDict
 
 from finnish_core.vocab import (
     VocabularyEntry,
@@ -40,19 +41,38 @@ class ImportPreview:
     document: VocabularyDocument
     # Accepted words whose part of speech was assumed from the base form.
     assumed: list[VocabularyEntry] = field(default_factory=list)
+    # Which column was read as Finnish, and why (see ColumnChoice).
+    columns: ColumnChoice = field(
+        default_factory=lambda: {"finnish": 0, "source": "auto", "confident": True}
+    )
 
 
 Overrides = dict[str, dict[str, str] | None]
 # Column names recognised in an optional header row (compared case-insensitively).
-_FINNISH_HEADERS = {"front", "finnish", "suomi", "fin", "word", "term", "sana"}
+_FINNISH_HEADERS = {
+    "front",
+    "finnish",
+    "suomi",
+    "suomeksi",
+    "fin",
+    "fi",
+    "word",
+    "term",
+    "sana",
+    "finnish word",
+}
 _ENGLISH_HEADERS = {
     "back",
     "english",
     "englanti",
+    "englanniksi",
     "eng",
+    "en",
     "definition",
     "meaning",
     "translation",
+    "gloss",
+    "english word",
 }
 # Detection order doubles as the tie-break: a tab beats a semicolon beats a comma,
 # because English definitions often contain commas but rarely tabs.
@@ -91,13 +111,96 @@ def _header_columns(cells: list[str]) -> tuple[int, int] | None:
     return (fin, eng) if fin is not None and eng is not None else None
 
 
-def parse_rows(text: str) -> tuple[list[tuple[str, str]], list[dict[str, str]]]:
-    """Split a word list into ``(finnish, english)`` rows and per-line problems.
+def _check_column(finnish_column: int | None) -> None:
+    if finnish_column not in (None, 0, 1):
+        raise VocabularyError("the Finnish column must be the first or the second")
 
-    Accepts tab-, semicolon-, or comma-separated text with an optional header
-    row, which covers Quizlet and Anki exports, spreadsheets, and hand-typed
-    lists. Lines starting with ``#`` are comments (or Anki export directives).
+
+@dataclass(frozen=True)
+class WordTable:
+    """A word list split into cells, before deciding which column is Finnish.
+
+    ``header`` holds the ``(finnish, english)`` cell indexes named by a
+    recognised header row (which is not among ``lines``).
     """
+
+    delimiter: str
+    header: tuple[int, int] | None
+    lines: list[tuple[int, list[str]]]
+
+    @property
+    def header_finnish_column(self) -> int | None:
+        """Which of the two word columns the header names as Finnish (0 or 1)."""
+        if self.header is None:
+            return None
+        fin, eng = self.header
+        return 0 if fin < eng else 1
+
+    def _pair(self, parts: list[str], finnish_column: int | None) -> tuple[str, str]:
+        if self.header is not None:
+            fin_col, eng_col = self.header
+            if finnish_column is not None:
+                first, second = sorted(self.header)
+                fin_col, eng_col = (
+                    (first, second) if finnish_column == 0 else (second, first)
+                )
+            fin = parts[fin_col] if fin_col < len(parts) else ""
+            eng = parts[eng_col] if eng_col < len(parts) else ""
+            return fin, eng
+        if len(parts) < 2:
+            return (parts[0] if parts else ""), ""
+        if self.delimiter == "\t":
+            # Tab exports (Anki, Quizlet) may carry extra columns such as tags.
+            return (parts[1], parts[0]) if finnish_column == 1 else (parts[0], parts[1])
+        if finnish_column == 1:
+            # "to speak, to talk, puhua" keeps everything before the last separator.
+            return parts[-1], self.delimiter.join(parts[:-1])
+        # "puhua, to speak, to talk" keeps everything after the first separator.
+        return parts[0], self.delimiter.join(parts[1:])
+
+    def rows(
+        self, finnish_column: int | None = None
+    ) -> tuple[list[tuple[str, str]], list[dict[str, str]]]:
+        """``(finnish, english)`` rows and per-line problems.
+
+        ``finnish_column`` says which of the two word columns is Finnish: 0 (the
+        first) or 1 (the second). ``None`` follows the header row, if there is
+        one, or else takes the first.
+        """
+        _check_column(finnish_column)
+        rows: list[tuple[str, str]] = []
+        problems: list[dict[str, str]] = []
+        for number, parts in self.lines:
+            fin, eng = self._pair(parts, finnish_column)
+            fin, eng = fin.strip(), eng.strip()
+            if not fin or not eng:
+                problems.append(
+                    {
+                        "fin": fin or f"(line {number})",
+                        "reason": f"line {number}: {_ROW_HINT}",
+                    }
+                )
+                continue
+            rows.append((fin, eng))
+        return rows, problems
+
+    def column_cells(self) -> list[tuple[str, str]]:
+        """For each line with two words: the word read as Finnish if the first
+        column is Finnish, and the one read as Finnish if the second is.
+
+        This is what :func:`detect_finnish_column` compares.
+        """
+        cells = []
+        for _, parts in self.lines:
+            first = self._pair(parts, 0)
+            second = self._pair(parts, 1)
+            if all(value.strip() for value in (*first, *second)):
+                cells.append((first[0].strip(), second[0].strip()))
+        return cells
+
+
+def read_table(text: str) -> WordTable:
+    """Split a word list into cells: the first step of :func:`parse_rows`."""
     delimiter = None
     lines: list[tuple[int, str]] = []
     for number, line in enumerate(text.splitlines(), 1):
@@ -121,37 +224,177 @@ def parse_rows(text: str) -> tuple[list[tuple[str, str]], list[dict[str, str]]]:
                 f"line {number}: could not read it ({error})"
             ) from error
 
-    columns = _header_columns(cells(*lines[0]))
-    if columns is not None:
+    header = _header_columns(cells(*lines[0]))
+    if header is not None:
         lines = lines[1:]
+    return WordTable(
+        delimiter, header, [(number, cells(number, line)) for number, line in lines]
+    )
 
-    rows: list[tuple[str, str]] = []
-    problems: list[dict[str, str]] = []
-    for number, line in lines:
-        parts = cells(number, line)
-        if columns is not None:
-            fin_col, eng_col = columns
-            fin = parts[fin_col] if fin_col < len(parts) else ""
-            eng = parts[eng_col] if eng_col < len(parts) else ""
-        elif len(parts) < 2:
-            fin, eng = (parts[0] if parts else ""), ""
-        elif delimiter == "\t":
-            # Tab exports (Anki, Quizlet) may carry extra columns such as tags.
-            fin, eng = parts[0], parts[1]
-        else:
-            # "puhua, to speak, to talk" keeps everything after the first separator.
-            fin, eng = parts[0], delimiter.join(parts[1:])
-        fin, eng = fin.strip(), eng.strip()
-        if not fin or not eng:
-            problems.append(
-                {
-                    "fin": fin or f"(line {number})",
-                    "reason": f"line {number}: {_ROW_HINT}",
-                }
-            )
-            continue
-        rows.append((fin, eng))
-    return rows, problems
+
+def parse_rows(
+    text: str, *, finnish_column: int | None = None
+) -> tuple[list[tuple[str, str]], list[dict[str, str]]]:
+    """Split a word list into ``(finnish, english)`` rows and per-line problems.
+
+    Accepts tab-, semicolon-, or comma-separated text with an optional header
+    row, which covers Quizlet and Anki exports, spreadsheets, and hand-typed
+    lists. Lines starting with ``#`` are comments (or Anki export directives).
+
+    Without a header row the first column is Finnish, unless ``finnish_column``
+    is 1 (see :meth:`WordTable.rows`).
+    """
+    return read_table(text).rows(finnish_column)
+
+
+# --- Which column is Finnish -------------------------------------------------
+
+# Words that mark a cell as English. None of them is also a common Finnish word
+# ("he", "me", "on" and "se" are, so they are left out).
+_ENGLISH_WORDS = frozenset(
+    """a an the to of in at by for with from about into and or but not no
+    is are was were be been am i you we they it its my your his her our their
+    this that these those what which who how something someone sth sb""".split()
+)
+_FINNISH_LETTERS = frozenset("äöå")
+# How much more Finnish-looking, per row, the second column has to be before it
+# is taken as Finnish; and the first, for its choice to count as confident.
+_CLEAR_LEAD = 0.5
+DETECTION_SAMPLE = 40
+
+
+@dataclass(frozen=True)
+class ColumnGuess:
+    """Which column :func:`detect_finnish_column` reads as Finnish.
+
+    ``scores`` is how Finnish each column looked, on average per row: roughly
+    -1 (English) to 2 (a known word with Finnish letters).
+    """
+
+    finnish: int
+    confident: bool
+    scores: tuple[float, float]
+
+
+class ColumnChoice(TypedDict):
+    """How the Finnish column was decided, as an import preview reports it.
+
+    ``finnish`` is 0 for the first word column and 1 for the second.
+    ``source`` is ``"header"`` (a header row named it), ``"chosen"`` (the caller
+    passed it), or ``"auto"`` (detected; ``confident`` is false when the
+    evidence was close and the first column was kept).
+    """
+
+    finnish: int
+    source: str
+    confident: bool
+
+
+def _words(text: str) -> list[str]:
+    return "".join(ch if ch.isalpha() else " " for ch in text).split()
+
+
+def cell_score(cell: str, known: Callable[[str], bool] | None = None) -> float:
+    """How Finnish one cell looks: known words, Finnish letters, English hints.
+
+    ``known`` tells whether the Finnish model knows a word; without it only the
+    spelling counts. Mirrored by ``cellScore`` in the web app's vocabParse.ts.
+    """
+    text = unicodedata.normalize("NFC", cell).strip()
+    folded = text.casefold()
+    words = _words(text)
+    if not words:
+        return 0.0
+    recognised = sum(1 for word in words if known(word)) if known else 0
+    score = recognised / len(words)
+    if _FINNISH_LETTERS & set(folded):
+        score += 1
+    if folded.startswith("to ") or any(
+        word.casefold() in _ENGLISH_WORDS for word in words
+    ):
+        score -= 1
+    elif len(words) > 1 and recognised < len(words):
+        score -= 0.5  # a multi-word gloss, not a known Finnish phrase
+    return score
+
+
+def _spread(rows: list[tuple[str, str]], limit: int) -> list[tuple[str, str]]:
+    if len(rows) <= limit:
+        return list(rows)
+    return [rows[i * len(rows) // limit] for i in range(limit)]
+
+
+def detect_finnish_column(
+    rows: list[tuple[str, str]],
+    morphology: MorphologyAdapter | None = None,
+    *,
+    limit: int = DETECTION_SAMPLE,
+) -> ColumnGuess:
+    """Guess which of two columns holds the Finnish words.
+
+    ``rows`` pairs, per line, the cell each column would give as Finnish (see
+    :meth:`WordTable.column_cells`). At most ``limit`` rows, spread over the
+    list, are scored with :func:`cell_score`: words the model genuinely knows
+    (it doesn't guess at unknown ones), Finnish letters, and English hints such
+    as a leading "to ", function words, and multi-word glosses. Without
+    ``morphology`` only the spelling counts.
+
+    The second column is chosen only when it is clearly more Finnish. When the
+    evidence is close, the first is kept but the guess is not confident.
+    """
+    sample = _spread(rows, limit)
+    if not sample:
+        return ColumnGuess(0, True, (0.0, 0.0))
+    known = None
+    if morphology is not None:
+        from finnish_core.vocab import is_known_word
+
+        cache: dict[str, bool] = {}
+
+        def known(word: str) -> bool:
+            if word not in cache:
+                cache[word] = is_known_word(word, morphology)
+            return cache[word]
+
+    first = sum(cell_score(cell, known) for cell, _ in sample) / len(sample)
+    second = sum(cell_score(cell, known) for _, cell in sample) / len(sample)
+    lead = second - first
+    if lead >= _CLEAR_LEAD:
+        return ColumnGuess(1, True, (first, second))
+    return ColumnGuess(0, lead <= -_CLEAR_LEAD, (first, second))
+
+
+ColumnDetector = Callable[[list[tuple[str, str]]], ColumnGuess]
+
+
+def choose_columns(
+    table: WordTable,
+    finnish_column: int | None = None,
+    detect: ColumnDetector = detect_finnish_column,
+) -> ColumnChoice:
+    """Decide the Finnish column: the caller's choice, the header, or a guess."""
+    _check_column(finnish_column)
+    if finnish_column is not None:
+        return {"finnish": finnish_column, "source": "chosen", "confident": True}
+    if table.header_finnish_column is not None:
+        return {
+            "finnish": table.header_finnish_column,
+            "source": "header",
+            "confident": True,
+        }
+    guess = detect(table.column_cells())
+    return {"finnish": guess.finnish, "source": "auto", "confident": guess.confident}
+
+
+def column_summary(columns: ColumnChoice) -> str:
+    """One line saying which column was read as Finnish, and why."""
+    where = "first" if columns["finnish"] == 0 else "second"
+    why = {
+        "header": "named by the header row",
+        "chosen": "as chosen",
+        "auto": "detected" if columns["confident"] else "unsure: check the words",
+    }.get(columns["source"], columns["source"])
+    return f"Finnish words read from the {where} column ({why})"
 
 
 def import_vocabulary(
@@ -162,9 +405,18 @@ def import_vocabulary(
     overrides: Overrides | None = None,
     forms_validator: Callable[[dict[str, Any]], bool] | None = None,
     metadata: dict[str, str] | None = None,
+    finnish_column: int | None = None,
+    detect_columns: ColumnDetector = detect_finnish_column,
 ) -> ImportPreview:
-    """Parse, analyze, and preview a word list without installing it."""
-    rows, problems = parse_rows(_decode(source_bytes))
+    """Parse, analyze, and preview a word list without installing it.
+
+    ``finnish_column`` (0 or 1) says which column is Finnish. Otherwise a
+    header row decides, or else ``detect_columns`` (by default
+    :func:`detect_finnish_column` going by spelling alone).
+    """
+    table = read_table(_decode(source_bytes))
+    columns = choose_columns(table, finnish_column, detect_columns)
+    rows, problems = table.rows(columns["finnish"])
     accepted: list[VocabularyEntry] = []
     corrected: list[VocabularyEntry] = []
     ambiguous: list[dict[str, str]] = []
@@ -244,7 +496,7 @@ def import_vocabulary(
         accepted, source_bytes=source_bytes, name=name, extra_metadata=metadata
     )
     return ImportPreview(
-        accepted, corrected, ambiguous, rejected, excluded, document, assumed
+        accepted, corrected, ambiguous, rejected, excluded, document, assumed, columns
     )
 
 
@@ -312,11 +564,14 @@ def analyze_vocabulary(
     name: str,
     overrides: Overrides | None = None,
     metadata: dict[str, str] | None = None,
+    finnish_column: int | None = None,
 ) -> ImportPreview:
     """Analyze a word list with a real morphology model and preview it.
 
     The model must already be installed. Each accepted word is checked by
-    generating one representative form.
+    generating one representative form. Unless ``finnish_column`` (0 or 1) or
+    a header row says which column is Finnish, the model helps detect it (see
+    :func:`detect_finnish_column`).
     """
     from finnish_core.forms import get_noun_tag, get_verb_tag
     from finnish_core.morphology import InflectionEngine
@@ -339,4 +594,6 @@ def analyze_vocabulary(
         overrides=overrides,
         forms_validator=has_forms,
         metadata=metadata,
+        finnish_column=finnish_column,
+        detect_columns=lambda rows: detect_finnish_column(rows, morphology),
     )

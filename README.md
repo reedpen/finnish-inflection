@@ -153,6 +153,19 @@ A header row (`Front;Back`, `Finnish,English`, `Suomi;Englanti`, …) is
 optional, and lines starting with `#` are ignored. Files must be UTF-8. A line
 that can't be split is reported in the preview instead of failing the import.
 
+The Finnish words may be in either column. A header row says which one;
+without one, the import checks a sample of the words against the Finnish
+model (and looks for letters like ä and ö, and English hints like "to run") to
+decide. The preview says which column it read as Finnish and why: from the
+header row, detected, or unsure. If it guessed wrong, or wasn't sure, choose
+the column yourself with `--finnish-column 1` or `--finnish-column 2`. (In a
+comma-separated list with the Finnish word last, the earlier commas stay in
+the English.)
+
+```bash
+finnish-drill vocab import lesson-3 english-first.txt --finnish-column 2
+```
+
 Ready-to-copy samples are in [`examples/vocabulary.csv`](examples/vocabulary.csv)
 and [`examples/vocabulary.txt`](examples/vocabulary.txt).
 
@@ -193,6 +206,7 @@ confirmation. A cancelled or failed import never changes your existing sets.
 | `--replace` | Atomically replace an existing set with the same name |
 | `--yes` | Install without the confirmation prompt (for reviewed automation) |
 | `--overrides FILE` | Resolve ambiguous words (see below) |
+| `--finnish-column 1\|2` | Which column holds the Finnish words (default: header row, or detected) |
 
 ### Resolving ambiguous words
 
@@ -222,7 +236,8 @@ finnish-drill                      Start the interactive drill
 finnish-drill --help               Show help
 finnish-drill --version            Show the installed version
 finnish-drill --debug              Show full tracebacks on startup errors
-finnish-drill vocab import NAME PATH [--overrides FILE] [--replace] [--yes]
+finnish-drill vocab import NAME PATH [--overrides FILE] [--finnish-column 1|2]
+                                   [--replace] [--yes]
                                    (PATH may be - for standard input)
 finnish-drill vocab browse [--repo OWNER/REPO]
 finnish-drill vocab get SET [--name NAME] [--replace] [--yes] [--repo OWNER/REPO]

@@ -69,8 +69,13 @@ def analyze_vocabulary_source(
     overrides: Overrides | None = None,
     morphology=None,
     metadata: dict[str, str] | None = None,
+    finnish_column: int | None = None,
 ) -> ImportPreview:
-    """Read a source, make sure the model is installed, and analyze it."""
+    """Read a source, make sure the model is installed, and analyze it.
+
+    ``finnish_column`` (0 or 1) says which column is Finnish; by default a
+    header row decides, or else it is detected.
+    """
     from finnish_core.morphology import InflectionEngine, UralicNlpAdapter
 
     from finnish_cli.engine import announce_download
@@ -81,5 +86,10 @@ def analyze_vocabulary_source(
         "fin", on_download=announce_download
     )
     return analyze_vocabulary(
-        data, morphology, name=name, overrides=overrides, metadata=metadata
+        data,
+        morphology,
+        name=name,
+        overrides=overrides,
+        metadata=metadata,
+        finnish_column=finnish_column,
     )
