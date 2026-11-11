@@ -130,6 +130,28 @@ def test_compound_lemmas_join_their_parts():
     )
 
 
+def test_inflected_compounds_prefer_the_whole_word_reading():
+    # Rebuilding the compound from its parts drops "kirjan"'s genitive -n and
+    # keeps the prefix's hyphen; the whole-word readings are the real lemmas.
+    compounds = Analyses(
+        kirjanpitäjät=[
+            "kirja+N+Sg+Gen+Cmp#pitäjä+N+Pl+Nom",
+            "kirjanpitäjä+N+Pl+Nom",
+        ],
+        suurkaupungissa=[
+            "suur-+N+Cmp#kaupunki+N+Sg+Ine",
+            "suur+N+Pref+Cmp#kaupunki+N+Sg+Ine",
+            "suurkaupunki+N+Sg+Ine",
+        ],
+        kissakaupassa=["kissa+N+Sg+Nom+Cmp#kauppa+N+Sg+Ine"],
+    )
+
+    assert categorize_word("kirjanpitäjät", "", compounds) == ("N", "kirjanpitäjä")
+    assert categorize_word("suurkaupungissa", "", compounds) == ("N", "suurkaupunki")
+    # With no whole-word reading, the rebuilt compound is still used.
+    assert categorize_word("kissakaupassa", "", compounds) == ("N", "kissakauppa")
+
+
 @pytest.mark.integration
 def test_real_model_reads_dictionary_forms_as_themselves():
     from finnish_core.morphology import UralicNlpAdapter
@@ -146,3 +168,20 @@ def test_real_model_reads_dictionary_forms_as_themselves():
         "kirjakauppa",
     )
     assert categorize_word("kuusi", "six", morphology) == ("N", "kuusi")
+
+
+@pytest.mark.integration
+def test_real_model_lemmatizes_inflected_compounds():
+    from finnish_core.morphology import UralicNlpAdapter
+
+    morphology = UralicNlpAdapter()
+
+    for word, lemma in [
+        ("kirjanpitäjät", "kirjanpitäjä"),
+        ("kirjanpitäjä", "kirjanpitäjä"),
+        ("suurkaupungissa", "suurkaupunki"),
+        ("suurkaupunki", "suurkaupunki"),
+        ("kirjakaupassa", "kirjakauppa"),
+        ("kuusi", "kuusi"),
+    ]:
+        assert analyze_word(word, "", morphology).lemma == lemma, word

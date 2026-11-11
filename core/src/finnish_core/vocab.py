@@ -196,11 +196,13 @@ _POS_ORDER = "VAN"
 class Reading:
     """One way the model can read a word: part of speech, lemma, and whether
     the word is that lemma's base form (nominative singular, or the verb's
-    dictionary infinitive)."""
+    dictionary infinitive). ``compound`` marks a lemma rebuilt from a compound's
+    parts, which can be malformed for inflected input."""
 
     pos: str
     lemma: str
     base_form: bool
+    compound: bool = False
 
 
 def _parse_analysis(word: str, analysis: str) -> Reading | None:
@@ -221,7 +223,9 @@ def _parse_analysis(word: str, analysis: str) -> Reading | None:
         )
     else:
         return None
-    return Reading(pos, lemma, base and lemma.casefold() == word.casefold())
+    return Reading(
+        pos, lemma, base and lemma.casefold() == word.casefold(), len(parts) > 1
+    )
 
 
 def word_readings(word: str, morphology: "MorphologyAdapter") -> list[Reading]:
@@ -236,15 +240,22 @@ def word_readings(word: str, morphology: "MorphologyAdapter") -> list[Reading]:
 
 
 def _best_lemmas(word: str, readings: list[Reading]) -> dict[str, str]:
-    """One lemma per part of speech: the word itself if possible, else the first."""
+    """One lemma per part of speech: the word itself if possible, else the first
+    whole-word reading, else the first reading.
+
+    Compound lemmas are rebuilt by joining the parts' lemmas, which drops a
+    part's own inflection: "kirjanpitäjät" would give "kirjapitäjä", where the
+    model's whole-word reading gives "kirjanpitäjä".
+    """
     choices: dict[str, str] = {}
     for pos in sorted({r.pos for r in readings}, key=_POS_ORDER.index):
-        lemmas = [r.lemma for r in readings if r.pos == pos]
+        ours = [r for r in readings if r.pos == pos]
+        lemmas = [r.lemma for r in ours]
         choices[pos] = next(
             (lemma for lemma in lemmas if lemma == word),
             next(
                 (lemma for lemma in lemmas if lemma.casefold() == word.casefold()),
-                lemmas[0],
+                next((r.lemma for r in ours if not r.compound), lemmas[0]),
             ),
         )
     return choices
