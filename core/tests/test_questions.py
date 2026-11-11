@@ -198,3 +198,60 @@ def test_build_pool_declines_participles_of_every_verb():
         ("puhua", "+V+Act+PrsPrc+Com+PxSg3"),
         ("juoda", "+V+Act+PrsPrc+Com+PxSg3"),
     }
+
+
+def test_question_for_matches_the_pool_builders():
+    from finnish_core.questions import build_pool, question_for
+    from finnish_core.settings import parse_settings
+
+    def inflect(entry, form_id):
+        return [f"{entry['lemma']}{form_id}"]
+
+    noun = {"fin": "talo", "lemma": "talo", "eng": "house", "pos": "N"}
+    verb = {
+        "fin": "puhua",
+        "lemma": "puhua",
+        "eng": "speak",
+        "pos": "V",
+        "verb_type": 1,
+    }
+    settings = [
+        {
+            "drill": "noun",
+            "selections": {"cases": ["+Com", "+Ine"], "numbers": ["+Pl"]},
+        },
+        {
+            "drill": "verb",
+            "selections": {
+                "types": ["1"],
+                "tenses": ["+Ind+Prt"],
+                "persons": ["Passive", "+Sg2"],
+            },
+        },
+        {
+            "drill": "participle",
+            "selections": {
+                "participles": ["+V+AgPrc"],
+                "cases": ["+Ela"],
+                "numbers": ["+Sg"],
+            },
+        },
+    ]
+    for raw in settings:
+        pool = build_pool(parse_settings(raw), [noun, verb], inflect, max_questions=50)
+        assert pool
+        for question in pool:
+            entry = noun if question.pos == "N" else verb
+            assert question_for(entry, question.form_id, inflect) == question
+
+
+def test_question_for_rejects_forms_of_another_part_of_speech_or_without_answers():
+    from finnish_core.questions import question_for
+
+    noun = {"fin": "talo", "lemma": "talo", "pos": "N"}
+    assert question_for(noun, "+V+Act+Ind+Prs+Sg1", lambda *_: ["x"]) is None
+    assert question_for(noun, "+N+Sg+Gen", lambda *_: []) is None
+    assert (
+        question_for(noun, "+N+Sg+Gen", lambda *_: ["talon"]).target
+        == "Genitive (-n) Singular"
+    )

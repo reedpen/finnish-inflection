@@ -304,6 +304,7 @@ core/       finnish-inflection-core (import finnish_core): the shared library
   session.py      session scheduling and statistics
   hints.py        answer checking and progressive hints
   settings.py     drill selections and presets
+  learning.py     daily review: FSRS scheduling, skill mastery, word classes
   starter/        the packaged starter vocabulary and its build tool
 cli/        finnish-inflection-cli (import finnish_cli): the terminal app
   cli.py          argparse entry point and `vocab` subcommands

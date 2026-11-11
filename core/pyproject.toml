@@ -15,6 +15,7 @@ classifiers = [
     "Natural Language :: Finnish",
 ]
 dependencies = [
+    "fsrs>=6.3,<7",
     "uralicnlp>=2.1.0",
 ]
 

@@ -268,3 +268,68 @@ def build_pool(
             rng=rng,
         )
     raise ValueError(f"unknown drill {settings.drill!r}")
+
+
+def _form_targets(pos: str) -> dict[str, tuple[str, str, str]]:
+    """Map each form id of a part of speech to (kind, target, question-id tail)."""
+    if pos == "V":
+        targets = {
+            get_verb_tag(tense, person): (
+                "Verb",
+                f"{tense}, {person}",
+                f"{tense}:{person}",
+            )
+            for tense in VERB_TENSES_MOODS
+            for person in VERB_PERSONS
+        }
+        for participle in VERB_PARTICIPLES:
+            for case, number in noun_combinations(NOUN_CASES, NOUN_NUMBERS):
+                shown = "" if case.startswith("Comitative") else f" {number}"
+                targets[get_participle_tag(participle, case, number)] = (
+                    "Verb",
+                    f"{participle}, {case}{shown}",
+                    f"{participle}:{case}:{number}",
+                )
+        return targets
+    targets = {}
+    for case, number in noun_combinations(NOUN_CASES, NOUN_NUMBERS):
+        shown = "" if case.startswith("Comitative") else f" {number}"
+        targets[get_noun_tag(case, number, pos)] = (
+            "Word",
+            f"{case}{shown}",
+            f"{case}:{number}",
+        )
+    return targets
+
+
+def question_for(
+    entry: VocabularyEntry, form_id: str, forms: FormLookup
+) -> Question | None:
+    """One question asking ``entry`` in ``form_id``, as the pool builders make it.
+
+    Returns ``None`` when the form id doesn't belong to the word's part of
+    speech or the word has no answers for it.
+    """
+    pos = entry.get("pos", "N")
+    target = _form_targets(pos).get(form_id)
+    answers = _answers(forms(entry, form_id))
+    if target is None or not answers:
+        return None
+    kind, label, tail = target
+    lemma = entry.get("lemma", entry["fin"])
+    if pos == "V":
+        prefix = "participle" if "Prc" in form_id else "verb"
+        question_id = f"{prefix}:{lemma}:{tail}"
+    else:
+        question_id = f"noun:{lemma}:{pos}:{tail}"
+    return Question(
+        id=question_id,
+        kind=kind,
+        word=entry["fin"],
+        translation=entry.get("eng", ""),
+        target=label,
+        answers=answers,
+        lemma=lemma,
+        pos=pos,
+        form_id=form_id,
+    )
