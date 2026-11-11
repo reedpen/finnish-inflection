@@ -13,7 +13,11 @@ def main(*, debug: bool = False):
         # Import inside try block so we can see loading message
         from src.data.vocab import load_book_of_mormon_vocab
         from src.nlp.engine import ensure_model_downloaded
+        from src.ui.editing import enable_vi_mode, vi_mode_requested
         from src.ui.menu import run_menu
+
+        if vi_mode_requested():
+            enable_vi_mode()
 
         with console.status(
             "[bold green]Loading NLP model & vocabulary...[/bold green]", spinner="dots"

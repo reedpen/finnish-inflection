@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -33,6 +34,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--debug", action="store_true", help="show tracebacks for troubleshooting"
+    )
+    parser.add_argument(
+        "--vim",
+        action="store_true",
+        help="use vi key bindings in menus and answer prompts "
+        "(or set FINNISH_DRILL_VIM=1)",
     )
     commands = parser.add_subparsers(dest="command")
     vocab = commands.add_parser("vocab", help="manage custom vocabulary sets")
@@ -122,6 +129,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "vocab":
             return _run_vocab(args)
+        if args.vim:
+            os.environ["FINNISH_DRILL_VIM"] = "1"
         from src.main import main as interactive_main
 
         return interactive_main(debug=args.debug) or 0
