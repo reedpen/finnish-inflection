@@ -185,48 +185,136 @@ def test_replay_orders_attempts_by_time_and_tracks_each_cell():
 # --- Word classes ------------------------------------------------------------------
 
 
-def nominal(lemma, genitive, pos="N"):
-    tag = f"+{pos}+Sg+Gen"
-    forms = {tag: [genitive]} if genitive else {}
+def nominal(lemma, genitive, partitive=None, pos="N"):
+    forms = {f"+{pos}+Sg+Gen": [genitive], f"+{pos}+Sg+Par": [partitive]}
+    forms = {tag: answers for tag, answers in forms.items() if answers[0]}
     return {"fin": lemma, "lemma": lemma, "pos": pos, "forms": forms}
 
 
+# Genitives and partitives as the Finnish model generates them (checked by
+# test_real_model_gives_the_tables_the_class_tests_assume).
+NOUN_CLASSES = [
+    ("talo", "talon", "taloa", "nominal:o"),
+    ("radio", "radion", "radiota", "nominal:o"),
+    ("katu", "kadun", "katua", "nominal:o:grad"),
+    ("kukka", "kukan", "kukkaa", "nominal:a:grad"),
+    ("koira", "koiran", "koiraa", "nominal:a"),
+    ("lattia", "lattian", "lattiaa", "nominal:a"),
+    ("ruoka", "ruuan", "ruokaa", "nominal:a:grad"),
+    ("paperi", "paperin", "paperia", "nominal:i"),
+    ("pankki", "pankin", "pankkia", "nominal:i:grad"),
+    # -i words with an e-stem: kivi → kiveä, kieli → kieltä, vesi → vettä.
+    ("kivi", "kiven", "kiveä", "nominal:i:e"),
+    ("sormi", "sormen", "sormea", "nominal:i:e"),
+    ("lahti", "lahden", "lahtea", "nominal:i:e:grad"),
+    ("kieli", "kielen", "kieltä", "nominal:i:t"),
+    ("lapsi", "lapsen", "lasta", "nominal:i:t"),
+    ("kuusi", "kuusen", "kuusta", "nominal:i:t"),
+    ("veitsi", "veitsen", "veistä", "nominal:i:t"),
+    ("vesi", "veden", "vettä", "nominal:si"),
+    ("käsi", "käden", "kättä", "nominal:si"),
+    ("kynsi", "kynnen", "kynttä", "nominal:si"),
+    ("huone", "huoneen", "huonetta", "nominal:e"),
+    ("liike", "liikkeen", "liikettä", "nominal:e:grad"),
+    # One-syllable long vowels and -i diphthongs vs ie/uo/yö vs vapaa.
+    ("maa", "maan", "maata", "nominal:VV"),
+    ("puu", "puun", "puuta", "nominal:VV"),
+    ("voi", "voin", "voita", "nominal:VV"),
+    ("tie", "tien", "tietä", "nominal:ie"),
+    ("työ", "työn", "työtä", "nominal:ie"),
+    ("suo", "suon", "suota", "nominal:ie"),
+    ("vapaa", "vapaan", "vapaata", "nominal:VV:2"),
+    ("nainen", "naisen", "naista", "nominal:nen"),
+    # -s words: vastaus → vastauksen vs rakkaus → rakkauden.
+    ("vastaus", "vastauksen", "vastausta", "nominal:us"),
+    ("kysymys", "kysymyksen", "kysymystä", "nominal:us"),
+    ("jänis", "jäniksen", "jänistä", "nominal:us"),
+    ("rakkaus", "rakkauden", "rakkautta", "nominal:us:d"),
+    ("ystävyys", "ystävyyden", "ystävyyttä", "nominal:us:d"),
+    ("kangas", "kankaan", "kangasta", "nominal:as:grad"),
+    ("mies", "miehen", "miestä", "nominal:as"),
+    ("kirves", "kirveen", "kirvestä", "nominal:as"),
+    ("kallis", "kalliin", "kallista", "nominal:is"),
+    # -in: lämmin and otin grade; puhelin, avain and sisin only add -m-.
+    ("puhelin", "puhelimen", "puhelinta", "nominal:in"),
+    ("avain", "avaimen", "avainta", "nominal:in"),
+    ("sisin", "sisimmän", "sisintä", "nominal:in"),
+    ("otin", "ottimen", "otinta", "nominal:in:grad"),
+    ("sydän", "sydämen", "sydäntä", "nominal:C"),
+    ("olut", "oluen", "olutta", "nominal:C"),
+    ("askel", "askelen", "askelta", "nominal:C"),
+    ("tytär", "tyttären", "tytärtä", "nominal:C:grad"),
+    ("kuningatar", "kuningattaren", "kuningatarta", "nominal:C:grad"),
+]
+ADJECTIVE_CLASSES = [
+    ("rikas", "rikkaan", "rikasta", "nominal:as:grad"),
+    ("uusi", "uuden", "uutta", "nominal:si"),
+    ("suuri", "suuren", "suurta", "nominal:i:t"),
+    ("lämmin", "lämpimän", "lämmintä", "nominal:in:grad"),
+    ("vapaa", "vapaan", "vapaata", "nominal:VV:2"),
+    ("korkea", "korkean", "korkeaa", "nominal:a"),
+    ("kaunis", "kaunin", "kaunsta", "nominal:is"),
+]
+
+
+@pytest.mark.parametrize(("lemma", "genitive", "partitive", "expected"), NOUN_CLASSES)
+def test_nominal_classes_come_from_the_ending_and_the_table(
+    lemma, genitive, partitive, expected
+):
+    assert word_class(nominal(lemma, genitive, partitive)) == expected
+
+
 @pytest.mark.parametrize(
-    ("lemma", "genitive", "expected"),
+    ("lemma", "genitive", "partitive", "expected"), ADJECTIVE_CLASSES
+)
+def test_adjectives_share_classes_with_nouns(lemma, genitive, partitive, expected):
+    assert word_class(nominal(lemma, genitive, partitive, pos="A")) == expected
+
+
+@pytest.mark.integration
+def test_real_model_gives_the_tables_the_class_tests_assume():
+    from finnish_core.morphology import InflectionEngine, UralicNlpAdapter
+
+    engine = InflectionEngine(UralicNlpAdapter())
+    cases = [("N", *case) for case in NOUN_CLASSES]
+    cases += [("A", *case) for case in ADJECTIVE_CLASSES]
+    for pos, lemma, genitive, partitive, _ in cases:
+        generated = [
+            engine.generate_inflection(lemma, f"+{pos}+Sg+{case}")[:1]
+            for case in ("Gen", "Par")
+        ]
+        assert generated == [[genitive], [partitive]], lemma
+
+
+def test_a_missing_partitive_falls_back_to_the_genitive():
+    assert word_class(nominal("kivi", "kiven")) == "nominal:i:e"
+    assert word_class(nominal("vesi", "veden")) == "nominal:si"
+
+
+@pytest.mark.parametrize(
+    ("lemma", "expected"),
     [
-        ("talo", "talon", "nominal:o"),
-        ("katu", "kadun", "nominal:o:grad"),
-        ("kukka", "kukan", "nominal:a:grad"),
-        ("koira", "koiran", "nominal:a"),
-        ("ruoka", "ruuan", "nominal:a:grad"),
-        ("paperi", "paperin", "nominal:i"),
-        ("pankki", "pankin", "nominal:i:grad"),
-        ("kivi", "kiven", "nominal:i:e"),
-        ("vesi", "veden", "nominal:i:e"),
-        ("lahti", "lahden", "nominal:i:e:grad"),
-        ("huone", "huoneen", "nominal:e"),
-        ("liike", "liikkeen", "nominal:e:grad"),
-        ("maa", "maan", "nominal:VV"),
-        ("nainen", "naisen", "nominal:nen"),
-        ("vastaus", "vastauksen", "nominal:us"),
-        ("kangas", "kankaan", "nominal:as:grad"),
-        ("kallis", "kalliin", "nominal:is"),
-        ("puhelin", "puhelimen", "nominal:in"),
-        ("sydän", "sydämen", "nominal:C"),
+        ("kala", "nominal:a"),
+        ("vesi", "nominal:i"),
+        ("vastaus", "nominal:us"),
+        ("maa", "nominal:VV"),
+        ("tie", "nominal:ie"),
+        ("vapaa", "nominal:VV:2"),
+        ("korkea", "nominal:a"),
+        ("mies", "nominal:as"),
+        ("sydän", "nominal:C"),
     ],
 )
-def test_nominal_classes_come_from_the_ending_and_the_genitive(
-    lemma, genitive, expected
-):
-    assert word_class(nominal(lemma, genitive)) == expected
+def test_words_without_a_table_still_get_an_ending_class(lemma, expected):
+    assert word_class({"fin": lemma, "pos": "N"}) == expected
 
 
-def test_adjectives_share_classes_with_nouns():
-    assert word_class(nominal("rikas", "rikkaan", pos="A")) == "nominal:as:grad"
+def test_every_class_has_a_label_with_an_example():
+    from finnish_core.learning import _NOMINAL_ENDINGS
 
-
-def test_words_without_a_table_still_get_an_ending_class():
-    assert word_class({"fin": "kala", "pos": "N"}) == "nominal:a"
+    for ending in _NOMINAL_ENDINGS:
+        label = word_class_label(f"nominal:{ending}")
+        assert label != ending and "(" in label
 
 
 def test_verbs_use_their_type():
@@ -247,6 +335,14 @@ def test_class_labels_and_order():
         "nominal:a:grad",
         "verb:1",
         "verb:2",
+    ]
+    assert word_class_label("nominal:si") == "-si → -den (vesi, käsi)"
+    e_stems = ["nominal:si", "nominal:i:t:grad", "nominal:i:e", "nominal:i:t"]
+    assert sorted(e_stems, key=word_class_order) == [
+        "nominal:i:e",
+        "nominal:i:t",
+        "nominal:i:t:grad",
+        "nominal:si",
     ]
 
 
@@ -347,6 +443,38 @@ def test_shortfalls_are_filled_from_the_other_groups():
     items = plan(due, size=8, new_limit=0)
     assert len(items) == 8
     assert {item.reason for item in items} == {"due"}
+
+
+def test_weak_practice_fills_the_plan_from_one_shared_cell():
+    # Nothing due or new: ten learned words share the one weak cell.
+    form = NOUN_FORMS[3]
+    learned = [word(i, due_in=timedelta(days=5)) for i in range(10)]
+    mastery = {skill_id("nominal:a", form): weak_cell()}
+
+    items = plan(learned, mastery, size=10, new_limit=0)
+
+    assert len(items) == 10
+    assert {(item.form_id, item.reason) for item in items} == {(form, "weak")}
+    assert len({item.word for item in items}) == 10
+
+
+def test_weak_passes_take_the_weakest_cell_first_and_alternate():
+    weaker, weak = NOUN_FORMS[3], NOUN_FORMS[4]
+    weakest = weak_cell()
+    for day in range(3, 6):
+        weakest = update_mastery(
+            weakest, attempt(outcome="skipped", at=T0 - timedelta(hours=day))
+        )
+    mastery = {
+        skill_id("nominal:a", weaker): weakest,
+        skill_id("nominal:a", weak): weak_cell(),
+    }
+    learned = [word(i, due_in=timedelta(days=5)) for i in range(10)]
+
+    # One weak item in the first pass, then the shortfall alternates cells.
+    for size, expected in [(1, {weaker: 1}), (3, {weaker: 2, weak: 1})]:
+        items = plan(learned, mastery, size=size, new_limit=0)
+        assert Counter(item.form_id for item in items) == expected
 
 
 def test_new_words_respect_the_daily_limit_and_list_order():

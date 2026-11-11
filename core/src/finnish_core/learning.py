@@ -33,7 +33,7 @@ from finnish_core.forms import (
 )
 from finnish_core.vocab import VocabularyEntry, classify_verb_type
 
-ENGINE_VERSION = "1"
+ENGINE_VERSION = "2"
 """Bump when a change here would give different cards, mastery or classes for
 the same attempts. Callers that cache states rebuild them on a mismatch."""
 
@@ -278,29 +278,47 @@ _VOWELS = "aeiouyäö"
 _NOMINAL_ENDINGS = {
     "nen": "-nen (nainen)",
     "ton": "-ton/-tön (rahaton)",
-    "us": "-us/-ys/-os (vastaus)",
+    "us": "-s → -ksen (vastaus)",
+    "us:d": "-us/-ys → -uden (rakkaus)",
     "as": "-as/-äs/-es (rikas)",
     "is": "-is (kallis)",
     "in": "-in (puhelin)",
     "C": "other consonant (sydän)",
-    "VV": "long vowel (maa)",
+    "VV": "one syllable, long vowel or -i (maa, voi)",
+    "ie": "one syllable, -ie/-uo/-yö (tie, työ)",
+    "VV:2": "long vowel, two or more syllables (vapaa)",
     "e": "-e (huone)",
-    "i:e": "-i, e-stem (vesi)",
+    "i:e": "-i, e-stem (kivi)",
+    "i:t": "-i, e-stem, partitive -ta/-tä (kieli, lapsi)",
+    "si": "-si → -den (vesi, käsi)",
     "i": "-i (paperi)",
     "a": "-a/-ä (kala)",
     "o": "-o/-ö/-u/-y (talo)",
 }
 GRADATION = ":grad"
+_LONG_VOWELS = tuple(vowel * 2 for vowel in _VOWELS)
+_OPENING_DIPHTHONGS = ("ie", "uo", "yö")
 
 
-def _ending(lemma: str, genitive: str | None) -> str:
+def _ending(lemma: str, genitive: str | None, partitive: str | None = None) -> str:
+    """The word's ending class, refined by its genitive and partitive if known.
+
+    Without a table, words are classed by their ending alone; the genitive and
+    partitive then split endings that hide different patterns.
+    """
     word = lemma.casefold()
+    genitive = (genitive or "").casefold()
+    partitive = (partitive or "").casefold()
     if word.endswith("nen"):
         return "nen"
     if word.endswith(("ton", "tön")):
         return "ton"
-    if word.endswith(("us", "ys", "os", "ös")):
+    if word.endswith("s") and genitive.endswith("ksen"):
+        # vastaus → vastauksen, and likewise jänis → jäniksen.
         return "us"
+    if word.endswith(("us", "ys", "os", "ös")):
+        # rakkaus → rakkauden, ystävyys → ystävyyden.
+        return "us:d" if genitive.endswith("den") else "us"
     if word.endswith(("as", "äs", "es")):
         return "as"
     if word.endswith("is"):
@@ -310,54 +328,91 @@ def _ending(lemma: str, genitive: str | None) -> str:
     if not word or word[-1] not in _VOWELS:
         return "C"
     if len(word) > 1 and word[-2] in _VOWELS:
-        return "VV"
+        # Only the final pair is a vowel: a one-syllable word.
+        one_syllable = not any(char in _VOWELS for char in word[:-2])
+        if word.endswith(_LONG_VOWELS):
+            return "VV" if one_syllable else "VV:2"
+        if one_syllable:
+            # tie → teitä, suo → soita; maa, voi and täi keep their vowels.
+            return "ie" if word.endswith(_OPENING_DIPHTHONGS) else "VV"
+        # korkea, radio, lattia: decline by their last vowel.
     if word.endswith("e"):
         return "e"
     if word.endswith("i"):
-        stem = (genitive or "").casefold().removesuffix("n")
-        return "i:e" if stem.endswith("e") else "i"
+        stem = genitive.removesuffix("n")
+        if not stem.endswith("e"):
+            return "i"
+        if word.endswith("si") and not stem[:-1].endswith("s"):
+            # vesi → veden, käsi → käden, kynsi → kynnen.
+            return "si"
+        if len(partitive) > 1 and partitive[-2] not in _VOWELS:
+            # kieli → kieltä, lapsi → lasta, uni → unta (not kivi → kiveä).
+            return "i:t"
+        return "i:e"
     if word.endswith(("a", "ä")):
         return "a"
     return "o"
 
 
+def _skeleton(text: str) -> str:
+    """The text up to its last consonant: kadu → kad."""
+    return text.rstrip(_VOWELS)
+
+
+def _drop_consonants(text: str) -> str:
+    """The text without its final consonants: tytär → tytä."""
+    end = len(text)
+    while end and text[end - 1] not in _VOWELS:
+        end -= 1
+    return text[:end]
+
+
 def _has_gradation(lemma: str, ending: str, genitive: str | None) -> bool:
     """Whether the genitive's stem consonants differ from the base form's.
 
-    Catches both directions: katu → kadun and rikas → rikkaan. Only applied to
-    endings whose stem is otherwise regular, so -nen or -us stem changes are not
-    mistaken for gradation.
+    Catches both directions: katu → kadun and rikas → rikkaan. Each type's own
+    stem change is set aside first, so vesi → veden, mies → miehen,
+    puhelin → puhelimen or vastaus → vastauksen are not taken for gradation.
     """
     if not genitive:
         return False
-    stem = genitive.casefold().removesuffix("n").rstrip(_VOWELS)
     word = lemma.casefold()
-    if ending == "i:e" and word.endswith("si"):
-        # vesi → veden: the s/d change belongs to the -si type itself.
-        return False
-    if ending in {"a", "o", "e", "i", "i:e"}:
-        return word.rstrip(_VOWELS) != stem
-    if ending in {"as", "is"}:
-        return word[:-1].rstrip(_VOWELS) != stem
+    stem = genitive.casefold().removesuffix("n")
+    if ending in {"a", "o", "e", "i", "i:e", "i:t"}:
+        return _skeleton(word) != _skeleton(stem)
+    if ending in {"as", "is", "in", "C"}:
+        # Where the base form ends in a consonant, the stem may have only vowels
+        # (kirves → kirvee-, rikas → rikkaa-) or a consonant of its own
+        # (sydän → sydäme-, mies → miehe-, tytär → tyttäre-): compare the base
+        # form's last consonants with the stem's either way.
+        short = _skeleton(stem)
+        readings = {short, _skeleton(_drop_consonants(short))}
+        return _skeleton(_drop_consonants(word)) not in readings
     return False
+
+
+def _first_form(entry: VocabularyEntry, case: str) -> str | None:
+    tag = get_noun_tag(case, "Singular", entry.get("pos", "N"))
+    answers = entry.get("forms", {}).get(tag)
+    return answers[0] if answers else None
 
 
 def word_class(entry: VocabularyEntry) -> str:
     """A stable id for the inflection pattern a word follows.
 
     Verbs use their type (``verb:4``). Nouns and adjectives decline alike, so
-    they share classes by ending (``nominal:a``), with ``:grad`` added when
-    their stored table shows consonant gradation (``nominal:a:grad``). Kotus
-    declension types can replace the endings later; bump ``ENGINE_VERSION``.
+    they share classes by ending (``nominal:a``), split where the stored table's
+    genitive or partitive shows a different pattern (``nominal:si`` for vesi →
+    veden), with ``:grad`` added when the table shows consonant gradation
+    (``nominal:a:grad``). Kotus declension types can replace the endings later;
+    bump ``ENGINE_VERSION``.
     """
     lemma = entry.get("lemma") or entry["fin"]
     if entry.get("pos") == "V":
         return f"verb:{entry.get('verb_type') or classify_verb_type(lemma)}"
-    genitives = entry.get("forms", {}).get(
-        get_noun_tag("Genitive (-n)", "Singular", entry.get("pos", "N"))
-    )
-    genitive = genitives[0] if genitives else None
-    ending = _ending(lemma, genitive)
+    genitive = _first_form(entry, "Genitive (-n)")
+    partitive = _first_form(entry, "Partitive (-a/-ta)")
+    ending = _ending(lemma, genitive, partitive)
     grade = GRADATION if _has_gradation(lemma, ending, genitive) else ""
     return f"nominal:{ending}{grade}"
 
@@ -519,13 +574,19 @@ def daily_plan(
             used.add(word.id)
             limit -= 1
 
-    def add_weak(limit: int) -> None:
-        by_class: dict[str, list[ReviewWord]] = {}
-        for word in learned:
-            by_class.setdefault(word.word_class, []).append(word)
+    by_class: dict[str, list[ReviewWord]] = {}
+    for word in learned:
+        by_class.setdefault(word.word_class, []).append(word)
+
+    def add_weak(limit: int) -> int:
+        """One pass over the weak cells, weakest first, one word for each.
+
+        Returns how many items it added.
+        """
+        added = 0
         for _, skill in weak_cells:
-            if len(plan) >= size or limit <= 0:
-                return
+            if len(plan) >= size or added >= limit:
+                break
             class_id, _, form_id = skill.partition("|")
             candidates = [
                 (word, form)
@@ -539,7 +600,8 @@ def daily_plan(
             word, form = rng.choice(candidates)
             plan.append(PlanItem(word.id, form, "weak"))
             used.add(word.id)
-            limit -= 1
+            added += 1
+        return added
 
     def add_new(limit: int) -> None:
         for word in fresh:
@@ -562,9 +624,11 @@ def daily_plan(
     add_due(want_due)
     add_weak(want_weak)
     add_new(want_new)
-    # Fill any shortfall: more due words, then more weak spots, then new words.
+    # Fill any shortfall: more due words, then more weak spots (pass after pass,
+    # so several words can practise one cell), then new words.
     add_due(size)
-    add_weak(size)
+    while len(plan) < size and add_weak(size):
+        pass
     add_new(size)
 
     rng.shuffle(plan)
