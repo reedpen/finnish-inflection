@@ -1,39 +1,21 @@
+# Development workspace for the two published packages:
+#   core/  finnish-inflection-core  (import finnish_core), the shared library
+#   cli/   finnish-inflection-cli   (import finnish_cli), the terminal app
 [project]
-name = "finnish-inflection-cli"
-version = "0.1.0"
-description = "Interactive Finnish noun, adjective, and verb inflection practice"
-readme = "README.md"
+name = "finnish-inflection-workspace"
+version = "0.0.0"
 requires-python = ">=3.11"
-license = "Apache-2.0"
-license-files = ["LICENSE", "NOTICE"]
-classifiers = [
-    "Environment :: Console",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
-]
-dependencies = [
-    "inquirerpy>=0.3.4",
-    "rich>=14.3.3",
-    "uralicnlp>=2.1.0",
-    "platformdirs>=4.3.6",
-    "prompt-toolkit>=3.0.48",
-]
+dependencies = ["finnish-inflection-core", "finnish-inflection-cli"]
 
-[project.scripts]
-finnish-drill = "src.cli:main"
+[tool.uv]
+package = false
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[tool.uv.workspace]
+members = ["core", "cli"]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src"]
-
-[tool.hatch.build.targets.sdist]
-include = ["src", "examples", "LICENSE", "NOTICE", "README.md", "pyproject.toml"]
+[tool.uv.sources]
+finnish-inflection-core = { workspace = true }
+finnish-inflection-cli = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -42,8 +24,9 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "--strict-markers -m 'not integration'"
-testpaths = ["tests"]
+addopts = "--strict-markers -m 'not integration' --import-mode=importlib"
+testpaths = ["core/tests", "cli/tests"]
+pythonpath = ["cli/tests"]
 markers = [
     "integration: requires the real Finnish UralicNLP model",
 ]

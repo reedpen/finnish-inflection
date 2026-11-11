@@ -1,0 +1,45 @@
+{
+  "source": "default_vocab.csv",
+  "source_sha256": "94f6a78891281a375574ccffa3a846336d11905b89dee37ff0de583776a24561",
+  "overrides": "default_vocab.overrides.json",
+  "overrides_sha256": "fea355e3739eb1769a0518d5e69e67193df94e9e88cf339dab1d1a76c0469dc7",
+  "transformation": "python -m finnish_core.starter.build --check --validate-model",
+  "accepted": 35,
+  "duplicates": [],
+  "empty_values": [],
+  "unknown_parts_of_speech": [],
+  "ambiguous_analyses": [],
+  "resolved_ambiguities": [
+    {
+      "fin": "nainen",
+      "reviewed": "nainen (N)",
+      "analyzed": "nainen (?)"
+    },
+    {
+      "fin": "uusi",
+      "reviewed": "uusi (A)",
+      "analyzed": "uusi (?)"
+    },
+    {
+      "fin": "hyvä",
+      "reviewed": "hyvä (A)",
+      "analyzed": "hyvä (?)"
+    },
+    {
+      "fin": "pieni",
+      "reviewed": "pieni (A)",
+      "analyzed": "pieni (?)"
+    },
+    {
+      "fin": "suuri",
+      "reviewed": "suuri (A)",
+      "analyzed": "suuri (?)"
+    }
+  ],
+  "generated_form_failures": [],
+  "model_verification": {
+    "status": "passed",
+    "adapter": "UralicNlpAdapter"
+  },
+  "review_status": "passed"
+}

@@ -1,0 +1,16 @@
+Finnish Inflection
+Copyright 2026 Reed Pennock
+
+Licensed under the Apache License, Version 2.0; see LICENSE.
+
+Excluded files
+--------------
+book_of_mormon_complete.csv and data/vocab_cache.json are historical files with
+no recorded source or redistribution license. They are not covered by the
+Apache License grant, are not used by the program, and are excluded from built
+distributions.
+
+Third-party components
+----------------------
+The Finnish morphology model (Omorfi, GNU GPL) is downloaded at runtime by
+uralicNLP (Apache-2.0). It is not part of this repository or its distributions.

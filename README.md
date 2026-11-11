@@ -44,11 +44,11 @@ Requires Python 3.11 or newer.
 
 ```bash
 # with uv
-uv tool install .
+uv tool install ./cli
 finnish-drill
 
-# or with pip
-python -m pip install .
+# or with pip (install the shared library first)
+python -m pip install ./core ./cli
 finnish-drill
 ```
 
@@ -237,16 +237,16 @@ finnish-drill vocab remove NAME
 **pip**
 
 ```bash
-python -m pip install .                       # install from a checkout
-python -m pip install dist/finnish_inflection_cli-*.whl   # install a built wheel
-python -m pip install --upgrade .             # upgrade
-python -m pip uninstall finnish-inflection-cli
+python -m pip install ./core ./cli            # install from a checkout
+python -m pip install dist/*.whl              # install built wheels (both)
+python -m pip install --upgrade ./core ./cli  # upgrade
+python -m pip uninstall finnish-inflection-cli finnish-inflection-core
 ```
 
 **uv tool** (an isolated user-level install)
 
 ```bash
-uv tool install .
+uv tool install ./cli
 uv tool upgrade finnish-inflection-cli
 uv tool uninstall finnish-inflection-cli
 ```
@@ -281,33 +281,49 @@ preferences** from the main menu.
 uv sync
 uv run pytest                    # fast hermetic suite; does not need the model
 uv run pytest -m integration     # uses the real Finnish model (download it first)
-uv run ruff check src tests main.py
-uv run ruff format --check src tests main.py
+uv run ruff check core cli
+uv run ruff format --check core cli
+uv run python -m finnish_cli     # run the drill from the checkout
 ```
 
-CI runs ruff and the hermetic suite on Python 3.11 and 3.14. It also builds the
-wheel and sdist and smoke-tests the installed command outside the checkout.
+CI runs ruff and the hermetic suite on Python 3.11 and 3.14. It also builds
+both packages and smoke-tests the installed command outside the checkout.
 
 ### Project layout
 
+The repository holds two packages, developed together as a uv workspace:
+
 ```text
-src/
+core/       finnish-inflection-core (import finnish_core): the shared library
+  morphology.py   UralicNLP wrapper with an injectable model
+  forms.py        human-readable form labels → Omorfi tags (the stable form ids)
+  paradigm.py     full inflection tables and form lookups
+  vocab.py        the vocabulary document format and validation
+  importer.py     word-list parsing, analysis, and the import preview
+  questions.py    question pools for each drill
+  session.py      session scheduling and statistics
+  hints.py        answer checking and progressive hints
+  settings.py     drill selections and presets
+  starter/        the packaged starter vocabulary and its build tool
+cli/        finnish-inflection-cli (import finnish_cli): the terminal app
   cli.py          argparse entry point and `vocab` subcommands
-  main.py         startup: model download, vocabulary load, menu
+  app.py          startup: model download, vocabulary load, menu
+  store.py        named vocabulary sets in the user data directory
+  sources.py      reading word lists from paths, standard input, or text
+  remote.py       the online sets repository
   ui/             interactive menus, drill loop, vocabulary manager
-  domain/         question pools, session scheduling and stats, saved settings
-  nlp/            UralicNLP wrapper and human-readable → Omorfi tag mapping
-  data/           vocabulary store, importer, packaged starter vocabulary
-  scripts/        maintainer tools for building and checking vocabulary
-tests/            pytest suite (integration tests are marked `integration`)
-examples/         sample import files
+examples/   sample import files
 ```
+
+The core does no printing, file, or network access of its own; front ends pass
+in the morphology model. Tests live in `core/tests` and `cli/tests`
+(integration tests are marked `integration`).
 
 ### Maintaining the starter vocabulary
 
-The canonical source is `src/data/default_vocab.csv` (columns
+The canonical source is `core/src/finnish_core/starter/default_vocab.csv` (columns
 `Front;Back;Lemma;POS;VerbType`). A deterministic build turns it into the
-packaged `src/data/default_vocab.json`. Analyzer ambiguities are resolved in
+packaged `default_vocab.json` beside it. Analyzer ambiguities are resolved in
 `default_vocab.overrides.json`. Those decisions, source fingerprints, and the
 validation status are recorded in `default_vocab.review.json`.
 
@@ -317,14 +333,14 @@ yourself. Then regenerate the JSON and review report, and verify them:
 
 ```bash
 # Regenerate default_vocab.json and default_vocab.review.json
-python -m src.scripts.build_default_vocab
+uv run python -m finnish_core.starter.build
 
 # Verify the chain: source/override hashes, stale artifacts, duplicates,
 # empty values, unsupported POS, and verbs without a type from 1 to 6
-python -m src.scripts.build_default_vocab --check
+uv run python -m finnish_core.starter.build --check
 
 # Also load the real model and check every lemma plus a generated form
-python -m src.scripts.build_default_vocab --check --validate-model
+uv run python -m finnish_core.starter.build --check --validate-model
 ```
 
 Run the model check after any change to the canonical list. It is opt-in
@@ -334,7 +350,7 @@ only the opt-in status and the command, not machine-specific results.
 To build a reviewed vocabulary from an arbitrary word list:
 
 ```bash
-uv run python -m src.scripts.build_cache words.csv \
+uv run python -m finnish_cli.scripts.build_cache words.csv \
   --overrides review.json --output reviewed.json --report review-report.json
 ```
 

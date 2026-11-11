@@ -1,6 +1,13 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11"
+
+[manifest]
+members = [
+    "finnish-inflection-cli",
+    "finnish-inflection-core",
+    "finnish-inflection-workspace",
+]
 
 [[package]]
 name = "annotated-types"
@@ -276,14 +283,43 @@ wheels = [
 
 [[package]]
 name = "finnish-inflection-cli"
-version = "0.1.0"
-source = { editable = "." }
+version = "0.2.0"
+source = { editable = "cli" }
 dependencies = [
+    { name = "finnish-inflection-core" },
     { name = "inquirerpy" },
     { name = "platformdirs" },
     { name = "prompt-toolkit" },
     { name = "rich" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "finnish-inflection-core", editable = "core" },
+    { name = "inquirerpy", specifier = ">=0.3.4" },
+    { name = "platformdirs", specifier = ">=4.3.6" },
+    { name = "prompt-toolkit", specifier = ">=3.0.48" },
+    { name = "rich", specifier = ">=14.3.3" },
+]
+
+[[package]]
+name = "finnish-inflection-core"
+version = "0.2.0"
+source = { editable = "core" }
+dependencies = [
     { name = "uralicnlp" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "uralicnlp", specifier = ">=2.1.0" }]
+
+[[package]]
+name = "finnish-inflection-workspace"
+version = "0.0.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "finnish-inflection-cli" },
+    { name = "finnish-inflection-core" },
 ]
 
 [package.dev-dependencies]
@@ -294,11 +330,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "inquirerpy", specifier = ">=0.3.4" },
-    { name = "platformdirs", specifier = ">=4.3.6" },
-    { name = "prompt-toolkit", specifier = ">=3.0.48" },
-    { name = "rich", specifier = ">=14.3.3" },
-    { name = "uralicnlp", specifier = ">=2.1.0" },
+    { name = "finnish-inflection-cli", editable = "cli" },
+    { name = "finnish-inflection-core", editable = "core" },
 ]
 
 [package.metadata.requires-dev]

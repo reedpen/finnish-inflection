@@ -1,0 +1,26 @@
+[project]
+name = "finnish-inflection-core"
+version = "0.2.0"
+description = "Finnish inflection logic: word-list analysis, inflection tables, question pools, and hints"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Natural Language :: Finnish",
+]
+dependencies = [
+    "uralicnlp>=2.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/finnish_core"]

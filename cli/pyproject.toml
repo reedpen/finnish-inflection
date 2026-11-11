@@ -1,0 +1,36 @@
+[project]
+name = "finnish-inflection-cli"
+version = "0.2.0"
+description = "Interactive Finnish noun, adjective, and verb inflection practice"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+classifiers = [
+    "Environment :: Console",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+    "finnish-inflection-core>=0.2,<0.3",
+    "inquirerpy>=0.3.4",
+    "rich>=14.3.3",
+    "platformdirs>=4.3.6",
+    "prompt-toolkit>=3.0.48",
+]
+
+[project.scripts]
+finnish-drill = "finnish_cli.cli:main"
+
+[tool.uv.sources]
+finnish-inflection-core = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/finnish_cli"]

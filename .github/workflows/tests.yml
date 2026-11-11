@@ -22,10 +22,15 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-      - name: Install project and development tools
-        run: python -m pip install --upgrade pip && python -m pip install -e . pytest ruff==0.15.21
+      - name: Install both packages and development tools
+        run: python -m pip install --upgrade pip && python -m pip install -e ./core -e ./cli pytest ruff==0.15.21
       - name: Check code quality
-        run: ruff check src tests main.py && ruff format --check src tests main.py
+        run: ruff check core cli && ruff format --check core cli
+      - name: Check the license copies match the root
+        run: |
+          for package in core cli; do
+            cmp LICENSE "$package/LICENSE" && cmp NOTICE "$package/NOTICE"
+          done
       - name: Run hermetic test suite
         run: python -m pytest
 
@@ -38,12 +43,14 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Build wheel and source distribution
+      - name: Build wheels and source distributions
         run: |
-          python -m pip install --upgrade pip build platformdirs
-          python -m src.scripts.build_default_vocab --check
-          python -m build
-      - name: Install wheel in an isolated environment
+          python -m pip install --upgrade pip build
+          python -m pip install -e ./core
+          python -m finnish_core.starter.build --check
+          python -m build core --outdir dist
+          python -m build cli --outdir dist
+      - name: Install wheels in an isolated environment
         run: |
           python -m venv /tmp/finnish-drill-smoke
           /tmp/finnish-drill-smoke/bin/python -m pip install dist/*.whl
@@ -54,10 +61,10 @@ jobs:
           /tmp/finnish-drill-smoke/bin/finnish-drill --version
           /tmp/finnish-drill-smoke/bin/python - <<'PY'
           from importlib.resources import files
-          from src.data.vocab import load_book_of_mormon_vocab
+          from finnish_cli.store import load_book_of_mormon_vocab
 
-          assert files("src.data").joinpath("default_vocab.json").is_file()
-          assert files("src.data").joinpath("default_vocab.csv").is_file()
+          assert files("finnish_core.starter").joinpath("default_vocab.json").is_file()
+          assert files("finnish_core.starter").joinpath("default_vocab.csv").is_file()
           nouns, verbs = load_book_of_mormon_vocab()
           assert nouns and verbs
           PY
