@@ -1,6 +1,6 @@
 [project]
 name = "finnish-inflection-core"
-version = "0.2.0"
+version = "0.3.0"
 description = "Finnish inflection logic: word-list analysis, inflection tables, question pools, and hints"
 readme = "README.md"
 requires-python = ">=3.11"

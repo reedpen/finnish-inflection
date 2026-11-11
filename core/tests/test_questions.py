@@ -121,3 +121,80 @@ def test_sparse_pool_falls_back_until_a_playable_candidate_is_found():
 
     assert [question.word for question in pool] == ["word-999"]
     assert calls == 1000
+
+
+def _words():
+    return [
+        {"fin": "talo", "lemma": "talo", "eng": "house", "pos": "N"},
+        {"fin": "iso", "lemma": "iso", "eng": "big", "pos": "A"},
+        {
+            "fin": "puhua",
+            "lemma": "puhua",
+            "eng": "to speak",
+            "pos": "V",
+            "verb_type": 1,
+        },
+        {
+            "fin": "juoda",
+            "lemma": "juoda",
+            "eng": "to drink",
+            "pos": "V",
+            "verb_type": 2,
+        },
+    ]
+
+
+def _echo(entry, form_id):
+    return [f"{entry['lemma']}{form_id}"]
+
+
+def test_questions_carry_stable_word_and_form_ids():
+    from finnish_core.settings import DrillSettings
+    from finnish_core.questions import build_pool
+
+    settings = DrillSettings("noun", {"cases": ["+Ine"], "numbers": ["+Pl"]}, 5)
+
+    pool = build_pool(settings, _words(), _echo)
+
+    assert {(q.lemma, q.pos, q.form_id) for q in pool} == {
+        ("talo", "N", "+N+Pl+Ine"),
+        ("iso", "A", "+A+Pl+Ine"),
+    }
+    assert all(q.answers == (f"{q.lemma}{q.form_id}",) for q in pool)
+
+
+def test_build_pool_filters_verbs_by_type_and_maps_ids_to_forms():
+    from finnish_core.questions import build_pool
+    from finnish_core.settings import DrillSettings
+
+    settings = DrillSettings(
+        "verb",
+        {"types": ["2"], "tenses": ["+Ind+Prt"], "persons": ["+Sg1", "Passive"]},
+        None,
+    )
+
+    pool = build_pool(settings, _words(), _echo)
+
+    assert sorted(q.form_id for q in pool) == [
+        "+V+Act+Ind+Prt+Sg1",
+        "+V+Pss+Ind+Prt+Pe4",
+    ]
+    assert {q.lemma for q in pool} == {"juoda"}
+
+
+def test_build_pool_declines_participles_of_every_verb():
+    from finnish_core.questions import build_pool
+    from finnish_core.settings import DrillSettings
+
+    settings = DrillSettings(
+        "participle",
+        {"participles": ["+V+Act+PrsPrc"], "cases": ["+Com"], "numbers": ["+Sg"]},
+        10,
+    )
+
+    pool = build_pool(settings, _words(), _echo)
+
+    assert {(q.lemma, q.form_id) for q in pool} == {
+        ("puhua", "+V+Act+PrsPrc+Com+PxSg3"),
+        ("juoda", "+V+Act+PrsPrc+Com+PxSg3"),
+    }

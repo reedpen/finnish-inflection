@@ -283,7 +283,7 @@ wheels = [
 
 [[package]]
 name = "finnish-inflection-cli"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "cli" }
 dependencies = [
     { name = "finnish-inflection-core" },
@@ -304,7 +304,7 @@ requires-dist = [
 
 [[package]]
 name = "finnish-inflection-core"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "core" }
 dependencies = [
     { name = "uralicnlp" },

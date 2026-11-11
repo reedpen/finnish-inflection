@@ -7,13 +7,14 @@ is up to the caller.
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
 
 from finnish_core.vocab import (
     VocabularyEntry,
     VocabularyDocument,
     VocabularyError,
+    WordAnalysis,
     classify_verb_type,
     make_vocabulary_document,
 )
@@ -21,7 +22,12 @@ from finnish_core.vocab import (
 if TYPE_CHECKING:
     from finnish_core.morphology import MorphologyAdapter
 
-Analyzer = Callable[[str, str], tuple[str, str]]
+Analyzer = Callable[[str, str], "tuple[str, str] | WordAnalysis"]
+"""Decide ``(pos, lemma)`` for a Finnish word and its gloss; ``"?"`` if unsure.
+
+Returning a :class:`~finnish_core.vocab.WordAnalysis` can also flag the
+decision as an assumption for review.
+"""
 
 
 @dataclass(frozen=True)
@@ -32,6 +38,8 @@ class ImportPreview:
     rejected: list[dict[str, str]]
     excluded: list[str]
     document: VocabularyDocument
+    # Accepted words whose part of speech was assumed from the base form.
+    assumed: list[VocabularyEntry] = field(default_factory=list)
 
 
 Overrides = dict[str, dict[str, str] | None]
@@ -105,17 +113,22 @@ def parse_rows(text: str) -> tuple[list[tuple[str, str]], list[dict[str, str]]]:
         raise VocabularyError("no vocabulary rows found")
     delimiter = delimiter or _detect_delimiter([line for _, line in lines])
 
-    def cells(line: str) -> list[str]:
-        return next(csv.reader([line], delimiter=delimiter))
+    def cells(number: int, line: str) -> list[str]:
+        try:
+            return next(csv.reader([line], delimiter=delimiter))
+        except csv.Error as error:  # e.g. a field over csv's size limit
+            raise VocabularyError(
+                f"line {number}: could not read it ({error})"
+            ) from error
 
-    columns = _header_columns(cells(lines[0][1]))
+    columns = _header_columns(cells(*lines[0]))
     if columns is not None:
         lines = lines[1:]
 
     rows: list[tuple[str, str]] = []
     problems: list[dict[str, str]] = []
     for number, line in lines:
-        parts = cells(line)
+        parts = cells(number, line)
         if columns is not None:
             fin_col, eng_col = columns
             fin = parts[fin_col] if fin_col < len(parts) else ""
@@ -157,6 +170,7 @@ def import_vocabulary(
     ambiguous: list[dict[str, str]] = []
     rejected: list[dict[str, str]] = list(problems)
     excluded: list[str] = []
+    assumed: list[VocabularyEntry] = []
     seen: set[tuple[str, str]] = set()
     overrides = overrides or {}
 
@@ -181,9 +195,14 @@ def import_vocabulary(
                 raise VocabularyError(
                     f"override for {fin!r} must contain text lemma and pos values"
                 )
-            was_corrected = True
+            was_corrected, was_assumed = True, False
         else:
-            pos, lemma = analyzer(fin, eng)
+            result = analyzer(fin, eng)
+            if isinstance(result, WordAnalysis):
+                pos, lemma, was_assumed = result.pos, result.lemma, result.assumed
+            else:
+                pos, lemma = result
+                was_assumed = False
             was_corrected = False
         if pos not in {"N", "A", "V"} or not lemma:
             problem = {
@@ -218,16 +237,21 @@ def import_vocabulary(
         accepted.append(item)
         if was_corrected:
             corrected.append(item)
+        if was_assumed:
+            assumed.append(item)
 
     document = make_vocabulary_document(
         accepted, source_bytes=source_bytes, name=name, extra_metadata=metadata
     )
-    return ImportPreview(accepted, corrected, ambiguous, rejected, excluded, document)
+    return ImportPreview(
+        accepted, corrected, ambiguous, rejected, excluded, document, assumed
+    )
 
 
 def preview_summary(preview: ImportPreview) -> str:
     return (
         f"Accepted: {len(preview.accepted)}; corrected: {len(preview.corrected)}; "
+        f"assumed base form: {len(preview.assumed)}; "
         f"ambiguous: {len(preview.ambiguous)}; rejected: {len(preview.rejected)}; "
         f"excluded: {len(preview.excluded)}"
     )
@@ -236,10 +260,17 @@ def preview_summary(preview: ImportPreview) -> str:
 def preview_rows(preview: ImportPreview) -> list[dict[str, str]]:
     """Return display-neutral detailed rows for CLI and interactive renderers."""
     corrected = {id(item) for item in preview.corrected}
+    assumed = {id(item) for item in preview.assumed}
     ambiguous = {(item["fin"], item["reason"]) for item in preview.ambiguous}
     rows = []
     for item in preview.accepted:
-        status = "corrected" if id(item) in corrected else "accepted"
+        status = (
+            "corrected"
+            if id(item) in corrected
+            else "assumed"
+            if id(item) in assumed
+            else "accepted"
+        )
         rows.append(
             {
                 "status": status,
@@ -289,7 +320,7 @@ def analyze_vocabulary(
     """
     from finnish_core.forms import get_noun_tag, get_verb_tag
     from finnish_core.morphology import InflectionEngine
-    from finnish_core.vocab import categorize_word
+    from finnish_core.vocab import analyze_word
 
     engine = InflectionEngine(morphology)
 
@@ -303,7 +334,7 @@ def analyze_vocabulary(
 
     return import_vocabulary(
         source_bytes,
-        analyzer=lambda fin, eng: categorize_word(fin, eng, morphology),
+        analyzer=lambda fin, eng: analyze_word(fin, eng, morphology),
         name=name,
         overrides=overrides,
         forms_validator=has_forms,

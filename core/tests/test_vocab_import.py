@@ -6,7 +6,7 @@ from finnish_core.importer import (
     parse_rows,
     preview_rows,
 )
-from finnish_core.vocab import VocabularyError
+from finnish_core.vocab import VocabularyError, WordAnalysis
 
 
 def test_csv_import_previews_accepted_duplicates_and_unknown_words(tmp_path):
@@ -197,3 +197,23 @@ def test_preview_rows_does_not_repeat_an_ambiguous_rejection():
     assert preview_rows(preview) == [
         {"status": "ambiguous", "fin": "kuusi", "detail": "multiple analyses"}
     ]
+
+
+def test_assumed_base_forms_are_accepted_but_listed_for_review():
+    def analyzer(fin, eng):
+        if fin == "tuli":
+            return WordAnalysis("N", "tuli", {"V": "tulla", "N": "tuli"}, True)
+        return WordAnalysis("N", fin, {"N": fin})
+
+    preview = import_vocabulary(
+        "tuli\tfire\ntalo\thouse\n".encode(), analyzer=analyzer, name="x"
+    )
+
+    assert [item["fin"] for item in preview.accepted] == ["tuli", "talo"]
+    assert [item["fin"] for item in preview.assumed] == ["tuli"]
+    assert [row["status"] for row in preview_rows(preview)] == ["assumed", "accepted"]
+
+
+def test_an_unreadable_line_is_a_vocabulary_error_not_a_crash():
+    with pytest.raises(VocabularyError, match="line 2: could not read it"):
+        parse_rows("talo\thouse\n" + "x" * 200_000 + "\tlong\n")

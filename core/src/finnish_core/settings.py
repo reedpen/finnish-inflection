@@ -1,6 +1,7 @@
 """Drill selections and presets, using stable Omorfi tag ids."""
 
 from dataclasses import dataclass
+from typing import Any
 
 from finnish_core.forms import (
     NOUN_CASES,
@@ -38,6 +39,45 @@ class DrillSettings:
     drill: str
     selections: dict[str, list[str]]
     session_length: int | None = 10
+
+
+class SettingsError(ValueError):
+    """Drill settings are malformed or use unknown ids."""
+
+
+def parse_settings(raw: Any) -> DrillSettings:
+    """Validate plain data (such as decoded JSON) into drill settings.
+
+    Every selection group of the drill must be present and non-empty, and use
+    ids from :data:`VALID_SELECTION_IDS`.
+    """
+    if not isinstance(raw, dict):
+        raise SettingsError("settings must be an object")
+    drill = raw.get("drill")
+    schema = VALID_SELECTION_IDS.get(drill) if isinstance(drill, str) else None
+    if schema is None:
+        raise SettingsError(f"unknown drill {drill!r}")
+    selections = raw.get("selections")
+    if not isinstance(selections, dict) or set(selections) != set(schema):
+        raise SettingsError(
+            f"{drill} selections must have exactly: {', '.join(sorted(schema))}"
+        )
+    for key, values in selections.items():
+        if (
+            not isinstance(values, list)
+            or not values
+            or not all(isinstance(value, str) for value in values)
+        ):
+            raise SettingsError(f"{key} must be a non-empty list of ids")
+        unknown = sorted(set(values) - schema[key])
+        if unknown:
+            raise SettingsError(f"unknown {key}: {', '.join(unknown)}")
+    length = raw.get("session_length", 10)
+    if length is not None and (
+        not isinstance(length, int) or isinstance(length, bool) or length < 1
+    ):
+        raise SettingsError("session_length must be a positive whole number or null")
+    return DrillSettings(drill, {key: list(v) for key, v in selections.items()}, length)
 
 
 PRESETS = {

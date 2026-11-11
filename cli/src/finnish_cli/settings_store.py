@@ -6,7 +6,7 @@ from pathlib import Path
 
 from platformdirs import user_config_dir
 
-from finnish_core.settings import VALID_SELECTION_IDS, DrillSettings
+from finnish_core.settings import DrillSettings, SettingsError, parse_settings
 
 APP_NAME = "finnish-inflection-cli"
 SETTINGS_VERSION = 1
@@ -35,28 +35,10 @@ class SettingsStore:
         raw = self._read()["last"].get(drill)
         if not isinstance(raw, dict) or raw.get("drill") != drill:
             return None
-        selections = raw.get("selections")
-        length = raw.get("session_length")
-        if not isinstance(selections, dict) or not all(
-            isinstance(values, list) and all(isinstance(value, str) for value in values)
-            for values in selections.values()
-        ):
+        try:
+            return parse_settings(raw)
+        except SettingsError:
             return None
-        schema = VALID_SELECTION_IDS.get(drill)
-        if (
-            schema is None
-            or set(selections) != set(schema)
-            or any(
-                not values or not set(values).issubset(schema[key])
-                for key, values in selections.items()
-            )
-        ):
-            return None
-        if length is not None and (
-            not isinstance(length, int) or isinstance(length, bool) or length < 1
-        ):
-            return None
-        return DrillSettings(drill, selections, length)
 
     def has_saved(self, drill: str) -> bool:
         return drill in self._read()["last"]

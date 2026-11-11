@@ -7,11 +7,7 @@ from InquirerPy.separator import Separator
 from rich.console import Console
 
 from finnish_core.paradigm import engine_lookup
-from finnish_core.questions import (
-    build_noun_pool,
-    build_participle_pool,
-    build_verb_pool,
-)
+from finnish_core.questions import build_pool
 from finnish_core.session import SessionAction
 from finnish_core.settings import DrillSettings, get_preset
 from finnish_core.forms import (
@@ -25,7 +21,7 @@ from finnish_core.forms import (
 from finnish_cli.engine import ENGINE
 from finnish_cli.interaction import NavigationAction
 from finnish_cli.settings_store import SettingsStore
-from finnish_cli.store import get_nouns_list, get_verbs_by_type, get_verbs_list
+from finnish_cli.store import get_nouns_list, get_verbs_list
 from finnish_cli.ui.drill import clear_terminal, run_practice_session
 from finnish_cli.ui.keys import NAV_KEYBINDINGS
 from finnish_cli.ui.vocabulary import manage_vocabulary
@@ -349,47 +345,14 @@ def _post_session_choices(action: SessionAction) -> list[dict]:
     return [choices[value] for value in order]
 
 
-def _pool_size(configuration: DrillSettings) -> int:
-    return max(20, configuration.session_length or 100)
-
-
-def _noun_pool(settings):
-    return build_noun_pool(
-        get_nouns_list(),
-        _labels(NOUN_CASES, settings.selections.get("cases", [])),
-        _labels(NOUN_NUMBERS, settings.selections.get("numbers", [])),
-        FORMS,
-        max_questions=_pool_size(settings),
-    )
-
-
-def _verb_pool(settings):
-    types = [int(value) for value in settings.selections.get("types", [])]
-    vocabulary = get_verbs_by_type(types) if types else get_verbs_list()
-    return build_verb_pool(
-        vocabulary,
-        _labels(VERB_TENSES_MOODS, settings.selections.get("tenses", [])),
-        _labels(VERB_PERSONS, settings.selections.get("persons", [])),
-        FORMS,
-        max_questions=_pool_size(settings),
-    )
-
-
-def _participle_pool(settings):
-    return build_participle_pool(
-        get_verbs_list(),
-        _labels(VERB_PARTICIPLES, settings.selections.get("participles", [])),
-        _labels(NOUN_CASES, settings.selections.get("cases", [])),
-        _labels(NOUN_NUMBERS, settings.selections.get("numbers", [])),
-        FORMS,
-        max_questions=_pool_size(settings),
-    )
+def _pool(settings: DrillSettings):
+    return build_pool(settings, [*get_nouns_list(), *get_verbs_list()], FORMS)
 
 
 DRILLS = {
-    "noun": (_noun_configuration, _noun_pool, "Noun Drill"),
-    "verb": (_verb_configuration, _verb_pool, "Verb Drill"),
-    "participle": (_participle_configuration, _participle_pool, "Participle Drill"),
+    "noun": (_noun_configuration, _pool, "Noun Drill"),
+    "verb": (_verb_configuration, _pool, "Verb Drill"),
+    "participle": (_participle_configuration, _pool, "Participle Drill"),
 }
 
 

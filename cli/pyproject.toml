@@ -1,6 +1,6 @@
 [project]
 name = "finnish-inflection-cli"
-version = "0.2.0"
+version = "0.3.0"
 description = "Interactive Finnish noun, adjective, and verb inflection practice"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,7 +15,7 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
-    "finnish-inflection-core>=0.2,<0.3",
+    "finnish-inflection-core>=0.3,<0.4",
     "inquirerpy>=0.3.4",
     "rich>=14.3.3",
     "platformdirs>=4.3.6",
